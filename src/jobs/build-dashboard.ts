@@ -80,7 +80,34 @@ export async function buildDashboard() {
   const categories = [...new Set(rows.map((r) => r!.category).filter(Boolean))].sort();
   const geos = [...new Set(rows.flatMap((r) => r!.geos))].sort();
 
+  // Data-source status, derived from which keys are configured at build time.
+  const SOURCES: { name: string; desc: string; env: string | null; note?: string }[] = [
+    { name: 'Apple App Store', desc: 'charts · scoring · fact-check · dashboard', env: null },
+    { name: 'Leads pipeline', desc: 'funnel rollup · suggestions · approval gates', env: null },
+    { name: 'App analysis', desc: 'idea · saturation · buildability for new apps', env: 'ANTHROPIC_API_KEY' },
+    { name: 'X / Twitter', desc: 'traction claims → fact-check', env: 'APIFY_TOKEN' },
+    { name: 'Google Play', desc: 'top charts via Apify', env: 'APIFY_TOKEN' },
+    { name: 'Product Hunt', desc: 'daily consumer launches → claims', env: 'PRODUCT_HUNT_TOKEN' },
+    { name: 'Apollo', desc: 'developer enrichment → leads', env: 'APOLLO_API_KEY', note: 'needs credits topped up' },
+    { name: 'Instantly', desc: 'sends · replies · meetings sync', env: 'INSTANTLY_API_KEY' },
+  ];
+  const sourcesHtml = SOURCES.map((s) => {
+    const live = !s.env || Boolean(process.env[s.env]);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:8px">
+      <span style="width:8px;height:8px;border-radius:50%;background:${live ? 'var(--good)' : 'var(--warn)'};flex:none"></span>
+      <div><b>${esc(s.name)}</b> <span class="dim">${esc(s.desc)}</span><br>
+      ${live
+        ? '<span class="dim" style="font-size:11px">live · runs nightly 02:15 UTC</span>'
+        : `<span style="font-size:11px;color:var(--warn)">waiting on key${s.note ? ` · ${esc(s.note)}` : ''}</span> <code style="font-size:10px" class="dim">gh secret set ${esc(s.env!)}</code>`}
+      </div></div>`;
+  }).join('');
+
   const body = `
+<details class="panel" style="padding:10px 14px">
+  <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
+  <p class="muted-note">A source activates the moment its key is added as a GitHub secret — no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
+</details>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
   <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
@@ -147,10 +174,13 @@ function render() {
 }
 function detailHtml(r) {
   const deltaRows = (r.deltas||[]).map(d => '<tr><td><span class="pill">' + d.geo + '</span></td>' +
-    '<td class="num">' + (d.now ?? '–') + '</td><td class="num">' + (d.prev ?? '–') + '</td>' +
-    '<td class="num" style="color:' + ((d.vel||0) > 0 ? 'var(--good)' : (d.vel||0) < 0 ? 'var(--bad)' : 'var(--dim)') + '">' +
-      ((d.vel||0) > 0 ? '▲ +' : (d.vel||0) < 0 ? '▼ ' : '') + (d.vel ?? 0) + '</td>' +
-    '<td class="num">' + (d.growth != null ? (d.growth * 100).toFixed(1) + '%' : '–') + '</td></tr>').join('');
+    '<td class="num">' + (d.now ?? '–') + '</td>' +
+    '<td class="num">' + (d.prev ?? '<span class="dim">not charting</span>') + '</td>' +
+    (d.prev == null
+      ? '<td class="num"><span class="pill new">new entry</span></td>'
+      : '<td class="num" style="color:' + ((d.vel||0) > 0 ? 'var(--good)' : (d.vel||0) < 0 ? 'var(--bad)' : 'var(--dim)') + '">' +
+        ((d.vel||0) > 0 ? '▲ +' : (d.vel||0) < 0 ? '▼ ' : '') + (d.vel ?? 0) + '</td>') +
+    '<td class="num">' + (d.growth ? (d.growth * 100).toFixed(1) + '%' : '–') + '</td></tr>').join('');
   const an = r.idea != null || r.build || r.sat != null;
   return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
     '<div><h4 style="margin:0 0 6px">Rank deltas (7d) per geo</h4>' +

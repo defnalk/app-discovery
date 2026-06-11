@@ -59,8 +59,11 @@ export async function runScoring() {
 
     const rankNow = bestRank(b.recent);
     if (rankNow == null) continue; // not currently charting in this geo
-    // Entering the chart scores as coming from just off it (limit + 1).
-    const rankPrev = bestRank(b.prev) ?? CHART_LIMIT + 1;
+    // Entering the chart scores as coming from just off it (limit + 1) — but
+    // rank_prev is stored as null so the dashboard shows "new entry", not a
+    // fake historical rank.
+    const prevRank = bestRank(b.prev);
+    const rankPrev = prevRank ?? CHART_LIMIT + 1;
     const rankVelocity = rankPrev - rankNow;
 
     const rcNow = latestRatingCount(b.recent);
@@ -79,7 +82,7 @@ export async function runScoring() {
 
     scores.push({
       app_id: appId, geo, computed_at: startedAt,
-      rank_now: rankNow, rank_prev: rankPrev,
+      rank_now: rankNow, rank_prev: prevRank,
       rank_velocity: rankVelocity, rating_growth: Number(ratingGrowth.toFixed(4)),
       momentum_score: Number(score.toFixed(4)),
     });
