@@ -217,15 +217,22 @@ export async function runImport() {
     }
     const inserted = fresh.length ? await db.insertLeads(fresh.map((p) => p.lead)) : 0;
 
-    // classifications only for the rows just inserted
+    // Classifications for any parsed lead that exists but has none yet — this
+    // backfills after partial runs and stays idempotent (classified leads skip).
     const all = await db.listLeadsJoined();
     const idByKey = new Map<string, string>();
-    for (const l of all) keysOf(l).forEach((k) => idByKey.set(k, l.id));
+    const hasCls = new Map<string, boolean>();
+    for (const l of all) {
+      keysOf(l).forEach((k) => idByKey.set(k, l.id));
+      hasCls.set(l.id, l.fit_verdict != null || l.reason != null || l.jaka_score != null || l.market_status != null);
+    }
     const cls: NewClassification[] = [];
-    for (const p of fresh) {
+    for (const p of parsed) {
       if (!p.cls) continue;
       const id = keysOf(p.lead).map((k) => idByKey.get(k)).find(Boolean);
-      if (id) cls.push({ lead_id: id, ...p.cls });
+      if (!id || hasCls.get(id)) continue;
+      hasCls.set(id, true);
+      cls.push({ lead_id: id, ...p.cls });
     }
     const classified = cls.length ? await db.insertClassifications(cls) : 0;
 

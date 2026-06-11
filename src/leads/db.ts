@@ -138,6 +138,17 @@ class SupabaseLeadsDb implements LeadsDb {
     return data as T;
   }
 
+  /** PostgREST caps responses at 1000 rows — page through with .range(). */
+  private async paged<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
+    const out: T[] = [];
+    for (let from = 0; ; from += 1000) {
+      const page = await this.must<T[]>(query(from, from + 999));
+      out.push(...page);
+      if (page.length < 1000) break;
+    }
+    return out;
+  }
+
   async insertLeads(rows: NewLead[]) {
     const valid = rows.filter((r) => r.source_arm); // provenance mandatory
     if (valid.length < rows.length) log.warn(`insertLeads: rejected ${rows.length - valid.length} rows without source_arm`);
@@ -158,8 +169,8 @@ class SupabaseLeadsDb implements LeadsDb {
   }
 
   async listLeadsJoined() {
-    const leads = await this.must<Record<string, unknown>[]>(
-      this.sb.from('leads').select('*, classifications(jaka_score, market_status, fit_verdict, reason, classified_at)').limit(20000),
+    const leads = await this.paged<Record<string, unknown>>((from, to) =>
+      this.sb.from('leads').select('*, classifications(jaka_score, market_status, fit_verdict, reason, classified_at)').order('id').range(from, to),
     );
     return leads.map((l) => {
       const cls = (l.classifications as Record<string, unknown>[] | null ?? [])
@@ -192,9 +203,11 @@ class SupabaseLeadsDb implements LeadsDb {
     return this.must<CampaignRow[]>(q);
   }
   async listCampaignLeads(campaignId?: string) {
-    let q = this.sb.from('campaign_leads').select('*');
-    if (campaignId) q = q.eq('campaign_id', campaignId);
-    return this.must<CampaignLeadRow[]>(q);
+    return this.paged<CampaignLeadRow>((from, to) => {
+      let q = this.sb.from('campaign_leads').select('*');
+      if (campaignId) q = q.eq('campaign_id', campaignId);
+      return q.order('lead_id').range(from, to);
+    });
   }
   async setCampaignStatus(id: string, status: string, approvedAt?: string) {
     await this.must(this.sb.from('campaigns').update({ status, ...(approvedAt ? { approved_at: approvedAt } : {}) }).eq('id', id));
@@ -219,9 +232,11 @@ class SupabaseLeadsDb implements LeadsDb {
     return n;
   }
   async listEvents(sinceIso?: string) {
-    let q = this.sb.from('events').select('lead_id, campaign_id, type, payload, occurred_at').limit(50000);
-    if (sinceIso) q = q.gte('occurred_at', sinceIso);
-    return this.must<EventRow[]>(q);
+    return this.paged<EventRow>((from, to) => {
+      let q = this.sb.from('events').select('lead_id, campaign_id, type, payload, occurred_at');
+      if (sinceIso) q = q.gte('occurred_at', sinceIso);
+      return q.order('occurred_at').range(from, to);
+    });
   }
 
   async listActiveConfig() {

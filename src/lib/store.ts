@@ -128,6 +128,17 @@ class SupabaseStore implements Store {
     return data as T;
   }
 
+  /** PostgREST caps responses at 1000 rows — page through with .range(). */
+  private async paged<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
+    const out: T[] = [];
+    for (let from = 0; ; from += 1000) {
+      const page = await this.must<T[]>(query(from, from + 999));
+      out.push(...page);
+      if (page.length < 1000) break;
+    }
+    return out;
+  }
+
   async upsertApps(rows: Omit<AppRow, 'id' | 'first_seen_at' | 'last_seen_at' | 'status'>[]) {
     const ids = new Map<string, string>();
     const now = new Date().toISOString();
@@ -177,25 +188,13 @@ class SupabaseStore implements Store {
   }
 
   async listApps() {
-    const out: AppRow[] = [];
-    for (let from = 0; ; from += 1000) {
-      const page = await this.must<AppRow[]>(this.sb.from('apps').select('*').range(from, from + 999));
-      out.push(...page);
-      if (page.length < 1000) break;
-    }
-    return out;
+    return this.paged<AppRow>((from, to) => this.sb.from('apps').select('*').order('id').range(from, to));
   }
 
   async listSnapshotsSince(isoDate: string) {
-    const out: SnapshotRow[] = [];
-    for (let from = 0; ; from += 1000) {
-      const page = await this.must<SnapshotRow[]>(
-        this.sb.from('app_snapshots').select('*').gte('captured_at', isoDate).range(from, from + 999),
-      );
-      out.push(...page);
-      if (page.length < 1000) break;
-    }
-    return out;
+    return this.paged<SnapshotRow>((from, to) =>
+      this.sb.from('app_snapshots').select('*').gte('captured_at', isoDate).order('id').range(from, to),
+    );
   }
 
   async upsertScores(rows: ScoreRow[]) {
@@ -211,7 +210,7 @@ class SupabaseStore implements Store {
   }
 
   async listRollups() {
-    return this.must<RollupRow[]>(this.sb.from('app_rollups').select('*'));
+    return this.paged<RollupRow>((from, to) => this.sb.from('app_rollups').select('*').order('app_id').range(from, to));
   }
 
   async insertClaims(rows: Omit<ClaimRow, 'id'>[]) {
@@ -224,7 +223,7 @@ class SupabaseStore implements Store {
   }
 
   async listUnverifiedClaims() {
-    return this.must<ClaimRow[]>(this.sb.from('app_claims').select('*').is('verified_value', null));
+    return this.paged<ClaimRow>((from, to) => this.sb.from('app_claims').select('*').is('verified_value', null).order('id').range(from, to));
   }
 
   async updateClaim(id: number, patch: Partial<ClaimRow>) {
@@ -241,7 +240,7 @@ class SupabaseStore implements Store {
   }
 
   async listCompanies() {
-    return this.must<CompanyRow[]>(this.sb.from('app_companies').select('*'));
+    return this.paged<CompanyRow>((from, to) => this.sb.from('app_companies').select('*').order('app_id').range(from, to));
   }
 
   async recordRun(source: string, startedAt: string, ok: boolean, detail: Record<string, unknown>) {
