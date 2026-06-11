@@ -73,6 +73,19 @@ export type RollupRow = {
   fact_check_flag: boolean;
 };
 
+export type AnalysisRow = {
+  app_id: string;
+  analyzed_at: string;
+  model_version: string | null;
+  idea_score: number | null;
+  idea_note: string | null;
+  buildability: string | null;
+  buildability_note: string | null;
+  saturation: number | null;
+  saturation_note: string | null;
+  too_complex: boolean;
+};
+
 export type CompanyRow = {
   app_id: string;
   apollo_org_id: string | null;
@@ -93,8 +106,13 @@ export interface Store {
   listApps(): Promise<AppRow[]>;
   listSnapshotsSince(isoDate: string): Promise<SnapshotRow[]>;
   upsertScores(rows: ScoreRow[]): Promise<void>;
+  listScores(): Promise<ScoreRow[]>;
   upsertRollups(rows: RollupRow[]): Promise<void>;
   listRollups(): Promise<RollupRow[]>;
+  upsertAnalyses(rows: AnalysisRow[]): Promise<void>;
+  listAnalyses(): Promise<AnalysisRow[]>;
+  /** "Delete" too-complex apps: status flag + dropped from shortlist; rows stay. */
+  markTooComplex(appIds: string[]): Promise<void>;
   insertClaims(rows: Omit<ClaimRow, 'id'>[]): Promise<number>;
   listUnverifiedClaims(): Promise<ClaimRow[]>;
   updateClaim(id: number, patch: Partial<ClaimRow>): Promise<void>;
@@ -203,6 +221,10 @@ class SupabaseStore implements Store {
     }
   }
 
+  async listScores() {
+    return this.paged<ScoreRow>((from, to) => this.sb.from('app_scores').select('*').order('app_id').range(from, to));
+  }
+
   async upsertRollups(rows: RollupRow[]) {
     for (const batch of chunks(rows)) {
       await this.must(this.sb.from('app_rollups').upsert(batch, { onConflict: 'app_id' }));
@@ -211,6 +233,24 @@ class SupabaseStore implements Store {
 
   async listRollups() {
     return this.paged<RollupRow>((from, to) => this.sb.from('app_rollups').select('*').order('app_id').range(from, to));
+  }
+
+  async upsertAnalyses(rows: AnalysisRow[]) {
+    for (const batch of chunks(rows)) {
+      await this.must(this.sb.from('app_analysis').upsert(batch, { onConflict: 'app_id' }));
+    }
+  }
+
+  async listAnalyses() {
+    return this.paged<AnalysisRow>((from, to) => this.sb.from('app_analysis').select('*').order('app_id').range(from, to));
+  }
+
+  async markTooComplex(appIds: string[]) {
+    for (let i = 0; i < appIds.length; i += 500) {
+      const batch = appIds.slice(i, i + 500);
+      await this.must(this.sb.from('apps').update({ status: 'too_complex' }).in('id', batch));
+      await this.must(this.sb.from('app_rollups').update({ shortlisted: false }).in('app_id', batch));
+    }
   }
 
   async insertClaims(rows: Omit<ClaimRow, 'id'>[]) {
@@ -258,6 +298,7 @@ type LocalData = {
   app_scores: ScoreRow[];
   app_rollups: RollupRow[];
   app_companies: CompanyRow[];
+  app_analysis?: AnalysisRow[];
   ingest_runs: unknown[];
   _claimSeq: number;
 };
@@ -335,6 +376,27 @@ class LocalStore implements Store {
   }
 
   async listRollups() { return this.d.app_rollups; }
+  async listScores() { return this.d.app_scores; }
+
+  async upsertAnalyses(rows: AnalysisRow[]) {
+    this.d.app_analysis ??= [];
+    const byKey = new Map(this.d.app_analysis.map((a) => [a.app_id, a]));
+    for (const r of rows) {
+      const ex = byKey.get(r.app_id);
+      if (ex) Object.assign(ex, r);
+      else { this.d.app_analysis.push(r); byKey.set(r.app_id, r); }
+    }
+    this.save();
+  }
+
+  async listAnalyses() { return this.d.app_analysis ?? []; }
+
+  async markTooComplex(appIds: string[]) {
+    const set = new Set(appIds);
+    for (const a of this.d.apps) if (set.has(a.id)) a.status = 'too_complex';
+    for (const r of this.d.app_rollups) if (set.has(r.app_id)) r.shortlisted = false;
+    this.save();
+  }
 
   async insertClaims(rows: Omit<ClaimRow, 'id'>[]) {
     const seen = new Set(this.d.app_claims.map((c) => `${c.app_id}|${c.claimed_metric}|${c.claim_source_url}`));

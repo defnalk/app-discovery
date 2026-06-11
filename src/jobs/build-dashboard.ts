@@ -15,10 +15,13 @@ export async function buildDashboard() {
   const store = getStore();
   const startedAt = new Date().toISOString();
   const since = new Date(Date.now() - 14 * DAY).toISOString();
-  const [apps, rollups, snaps] = await Promise.all([
-    store.listApps(), store.listRollups(), store.listSnapshotsSince(since),
+  const [apps, rollups, snaps, analyses, scores] = await Promise.all([
+    store.listApps(), store.listRollups(), store.listSnapshotsSince(since), store.listAnalyses(), store.listScores(),
   ]);
   const appById = new Map(apps.map((a) => [a.id, a]));
+  const analysisById = new Map(analyses.map((a) => [a.app_id, a]));
+  const scoresByApp = new Map<string, typeof scores>();
+  for (const s of scores) (scoresByApp.get(s.app_id) ?? scoresByApp.set(s.app_id, []).get(s.app_id)!).push(s);
 
   // Sparkline series: best rank per day per app (across geos/charts), last 14 days.
   const days: string[] = [];
@@ -35,8 +38,24 @@ export async function buildDashboard() {
     .map((r) => {
       const app = appById.get(r.app_id);
       if (!app) return null;
+      if (app.status === 'too_complex') return null; // dropped by analysis; kept in DB only
       const series = days.map((d) => rankByAppDay.get(r.app_id)?.get(d) ?? null);
+      const an = analysisById.get(r.app_id);
+      const deltas = (scoresByApp.get(r.app_id) ?? [])
+        .filter((s) => s.rank_now != null)
+        .sort((a, b) => (a.rank_now ?? 999) - (b.rank_now ?? 999))
+        .map((s) => ({ geo: s.geo, now: s.rank_now, prev: s.rank_prev, vel: s.rank_velocity, growth: s.rating_growth }));
       return {
+        idea: an?.idea_score ?? null,
+        idea_note: an?.idea_note ?? null,
+        build: an?.buildability ?? null,
+        build_note: an?.buildability_note ?? null,
+        sat: an?.saturation ?? null,
+        sat_note: an?.saturation_note ?? null,
+        deltas,
+        store_url: app.store === 'apple'
+          ? `https://apps.apple.com/app/id${app.store_id}`
+          : `https://play.google.com/store/apps/details?id=${app.store_id}`,
         id: r.app_id,
         name: app.name,
         store: app.store,
@@ -75,10 +94,11 @@ export async function buildDashboard() {
 <div class="panel" style="overflow-x:auto">
 <table id="t"><thead><tr>
   <th data-k="name">App</th><th data-k="category">Category</th><th>Geos live</th>
-  <th>Rank 14d</th><th data-k="momentum" class="num">Momentum ▾</th><th data-k="best_rank" class="num">Best rank</th>
+  <th>Rank 14d</th><th data-k="momentum" class="num">Momentum ▾</th>
+  <th data-k="idea" class="num">Idea</th><th data-k="build">Build</th><th data-k="sat" class="num">Satur.</th>
   <th data-k="rating_count" class="num">Verified ratings</th><th>Fact check</th><th data-k="first_seen">First caught</th>
 </tr></thead><tbody></tbody></table>
-<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} apps · incumbents kept but excluded from shortlist · read-only</p>
+<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} apps · click a row for per-geo deltas &amp; analysis · incumbents kept but excluded from shortlist · too-complex apps removed · read-only</p>
 </div>`;
 
   const script = `
@@ -99,7 +119,7 @@ function render() {
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.map(r => '<tr>' +
+  $('#t tbody').innerHTML = rows.map((r, i) => '<tr class="approw" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
     '<td>' + escq(r.category||'–') + '</td>' +
@@ -107,10 +127,42 @@ function render() {
       (r.geo_gap.length ? '<br><span class="dim">gap:</span> ' + r.geo_gap.map(g => '<span class="pill gap">' + g + '</span>').join('') : '') + '</td>' +
     '<td>' + r.spark + '</td>' +
     '<td class="num"><b>' + r.momentum.toFixed(2) + '</b></td>' +
-    '<td class="num">' + (r.best_rank ?? '–') + '</td>' +
+    '<td class="num">' + (r.idea != null ? '<b>' + r.idea + '</b>' : '<span class="dim">–</span>') + '</td>' +
+    '<td>' + (r.build ? '<span class="pill' + (r.build === 'weekend' || r.build === 'few_days' ? ' new' : '') + '">' + escq(r.build) + '</span>' : '<span class="dim">–</span>') + '</td>' +
+    '<td class="num">' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '<span class="dim">–</span>') + '</td>' +
     '<td class="num">' + fmt(r.rating_count) + '</td>' +
     '<td>' + (r.flag ? '<span class="flag">⚠ suspect</span>' : '<span class="dim">ok</span>') + '</td>' +
     '<td>' + r.first_seen + '</td></tr>').join('');
+  document.querySelectorAll('tr.approw').forEach(tr => tr.onclick = (e) => {
+    if (e.target.closest('a')) return;
+    const open = tr.nextElementSibling?.classList.contains('detail');
+    document.querySelectorAll('tr.detail').forEach(d => d.remove());
+    if (open) return;
+    const r = ROWS[+tr.dataset.i];
+    const d = document.createElement('tr');
+    d.className = 'detail';
+    d.innerHTML = '<td colspan="11" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
+    tr.after(d);
+  });
+}
+function detailHtml(r) {
+  const deltaRows = (r.deltas||[]).map(d => '<tr><td><span class="pill">' + d.geo + '</span></td>' +
+    '<td class="num">' + (d.now ?? '–') + '</td><td class="num">' + (d.prev ?? '–') + '</td>' +
+    '<td class="num" style="color:' + ((d.vel||0) > 0 ? 'var(--good)' : (d.vel||0) < 0 ? 'var(--bad)' : 'var(--dim)') + '">' +
+      ((d.vel||0) > 0 ? '▲ +' : (d.vel||0) < 0 ? '▼ ' : '') + (d.vel ?? 0) + '</td>' +
+    '<td class="num">' + (d.growth != null ? (d.growth * 100).toFixed(1) + '%' : '–') + '</td></tr>').join('');
+  const an = r.idea != null || r.build || r.sat != null;
+  return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+    '<div><h4 style="margin:0 0 6px">Rank deltas (7d) per geo</h4>' +
+      '<table style="min-width:320px"><thead><tr><th>Geo</th><th class="num">Rank now</th><th class="num">Rank -7d</th><th class="num">Velocity</th><th class="num">Rating growth</th></tr></thead>' +
+      '<tbody>' + (deltaRows || '<tr><td colspan="5" class="dim">no per-geo scores yet</td></tr>') + '</tbody></table></div>' +
+    '<div style="max-width:520px"><h4 style="margin:0 0 6px">Analysis</h4>' +
+      (an ? (
+        '<p style="margin:4px 0"><b>Idea ' + (r.idea ?? '–') + '/10</b> — ' + escq(r.idea_note||'') + '</p>' +
+        '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'–') + '</b> — ' + escq(r.build_note||'') + '</p>' +
+        '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '–') + '</b> — ' + escq(r.sat_note||'') + '</p>'
+      ) : '<p class="dim">not analyzed yet — top-momentum apps are analyzed nightly</p>') +
+      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a></p></div></div>';
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {

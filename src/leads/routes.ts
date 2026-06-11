@@ -45,9 +45,18 @@ async function getTiers() {
 // ================================================================ Pipeline
 async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL) {
   const db = getLeadsDb();
-  const [leads, funnel, tiers] = await Promise.all([db.listLeadsJoined(), db.getFunnelRollups(), getTiers()]);
+  const [leads, funnel, tiers, events] = await Promise.all([
+    db.listLeadsJoined(), db.getFunnelRollups(), getTiers(), db.listEvents(),
+  ]);
   const totals = new Map(funnel.filter((f) => f.source_arm === '*' && f.geo === '*').map((f) => [f.stage, f.count]));
   const msg = url.searchParams.get('msg');
+
+  // delta-CRM: per-lead event timeline (latest 12)
+  const eventsByLead = new Map<string, { type: string; at: string }[]>();
+  for (const e of events) {
+    if (!e.lead_id) continue;
+    (eventsByLead.get(e.lead_id) ?? eventsByLead.set(e.lead_id, []).get(e.lead_id)!).push({ type: e.type, at: e.occurred_at });
+  }
 
   const arms = [...new Set(leads.map((l) => l.source_arm))].sort();
   const geos = [...new Set(leads.map((l) => l.geo ?? 'unknown'))].sort();
@@ -56,6 +65,7 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     tier: tierOf(l.jaka_score, tiers),
     created: fmtDate(l.created_at),
     enriched: fmtDate(l.enriched_at),
+    events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
   }));
 
   const body = `
@@ -103,7 +113,7 @@ function render() {
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.slice(0, 500).map(r => '<tr>' +
+  $('#t tbody').innerHTML = rows.slice(0, 500).map(r => '<tr class="leadrow" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td><b>' + escq(r.company||'–') + '</b><br><span class="dim">' + escq(r.domain||'') + '</span></td>' +
     '<td>' + escq(r.contact_name||'–') + '<br><span class="dim">' + escq(r.contact_title||'') + '</span></td>' +
     '<td>' + escq(r.email||'–') + '<br><span class="pill">' + escq(r.email_status||'?') + '</span></td>' +
@@ -111,12 +121,47 @@ function render() {
     '<td><span class="pill">' + escq(r.source_arm) + '</span></td>' +
     '<td class="num"><b>' + (r.jaka_score ?? '–') + '</b></td><td>' + r.tier + '</td>' +
     '<td>' + escq(r.market_status||'–') + '</td>' +
-    '<td style="max-width:260px">' + escq(r.reason||'–') + '</td>' +
+    '<td style="max-width:260px">' + escq((r.reason||'–').slice(0, 120)) + '</td>' +
     '<td>' + (STAGE_LABELS[r.stage] || escq(r.stage||'raw')) + '</td>' +
     '<td><span class="dim">src:</span> ' + escq(r.source_arm) +
-      (r.signal_source_url ? ' · <a href="' + escq(r.signal_source_url) + '" style="color:var(--acc)">signal</a>' : '') +
+      (r.signal_source_url ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
       '<br><span class="dim">enriched ' + r.enriched + '</span></td></tr>').join('');
   if (rows.length > 500) $('#count').textContent += ' (first 500 rendered)';
+  document.querySelectorAll('tr.leadrow').forEach(tr => tr.onclick = (e) => {
+    if (e.target.closest('a')) return;
+    const open = tr.nextElementSibling?.classList.contains('detail');
+    document.querySelectorAll('tr.detail').forEach(d => d.remove());
+    if (open) return;
+    const r = ROWS[+tr.dataset.i];
+    const d = document.createElement('tr');
+    d.className = 'detail';
+    d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + leadDetail(r) + '</td>';
+    tr.after(d);
+  });
+}
+function leadDetail(r) {
+  const p = r.raw_payload || {};
+  const signals = [
+    p.expansion_signal ? '<p style="margin:4px 0"><b>Expansion signal:</b> ' + escq(p.expansion_signal) + '</p>' : '',
+    p.hiring_signal ? '<p style="margin:4px 0"><b>Hiring signal:</b> ' + escq(p.hiring_signal) + '</p>' : '',
+    p.why_selected ? '<p style="margin:4px 0"><b>Why selected:</b> ' + escq(p.why_selected) + '</p>' : '',
+    p.band ? '<p style="margin:4px 0"><b>Apollo band:</b> ' + escq(p.band) + ' (rank ' + escq(String(p.rank ?? '–')) + ', ' + escq(String(p.confidence || '')) + ')</p>' : '',
+    p.momentum_score != null ? '<p style="margin:4px 0"><b>App momentum:</b> ' + p.momentum_score + ' · live in ' + escq((p.geos_live||[]).join(', ')) + '</p>' : '',
+  ].join('');
+  const timeline = (r.events||[]).map(e =>
+    '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
+  return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+    '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
+      (signals || '<p class="dim">no stored signals</p>') +
+      '<p style="margin:8px 0 4px"><b>Classifier reason:</b> ' + escq(r.reason || 'unclassified') + '</p>' +
+      '<p class="dim" style="margin:4px 0">market: ' + escq(r.market_status||'–') + ' · fit: ' + escq(r.fit_verdict||'–') +
+      ' · hq: ' + escq(r.hq||'–') + '</p>' +
+      '<p class="dim" style="margin:4px 0">provenance: ' + escq(r.source_arm) + ' · added ' + r.created + ' · enriched ' + r.enriched +
+      (r.signal_source_url ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">source ↗</a>' : '') + '</p></div>' +
+    '<div><h4 style="margin:0 0 6px">Activity (delta)</h4>' +
+      '<table style="min-width:220px"><thead><tr><th>Date</th><th>Event</th></tr></thead><tbody>' +
+      (timeline || '<tr><td colspan="2" class="dim">no events yet — instantly_sync runs nightly</td></tr>') +
+      '</tbody></table></div></div>';
 }
 document.querySelectorAll('#funnel .stat').forEach(el => el.onclick = () => {
   $('#stage').value = $('#stage').value === el.dataset.stage ? '' : el.dataset.stage; render();

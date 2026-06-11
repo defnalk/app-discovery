@@ -27,6 +27,7 @@ export type LeadJoined = {
   signal_source_url: string | null;
   enriched_at: string | null;
   created_at: string;
+  raw_payload?: Record<string, unknown> | null;
   // latest classification
   jaka_score: number | null;
   market_status: string | null;

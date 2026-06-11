@@ -10,6 +10,7 @@ import { runProductHuntIngest } from './jobs/ingest-producthunt.ts';
 import { runXIngest } from './jobs/ingest-x.ts';
 import { runScoring } from './jobs/score.ts';
 import { runFactCheck } from './jobs/factcheck.ts';
+import { runAnalyze } from './jobs/analyze.ts';
 import { runApolloEnrichment } from './jobs/enrich-apollo.ts';
 import { buildDashboard } from './jobs/build-dashboard.ts';
 
@@ -22,6 +23,7 @@ const jobs: Job[] = [
   { name: 'ingest-x', run: runXIngest },
   { name: 'score', run: runScoring },
   { name: 'factcheck', run: runFactCheck },
+  { name: 'analyze', run: runAnalyze },
   { name: 'enrich-apollo', run: runApolloEnrichment },
   { name: 'build-dashboard', run: buildDashboard },
 ];

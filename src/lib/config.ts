@@ -54,6 +54,7 @@ export const KNOWN_MAJORS = [
   'disney', 'roblox', 'supercell', 'king', 'electronic arts', 'activision',
   'zoom', 'paypal', 'uber', 'booking.com', 'airbnb', 'duolingo', 'openai',
   'adobe', 'samsung', 'yandex', 'alibaba', 'shein', 'temu', 'canva',
+  'anthropic', 'perplexity', 'deepseek', 'x.ai', 'xai',
 ];
 
 export const SHORTLIST_MOMENTUM_MIN = 0.15;
