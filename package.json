@@ -4,7 +4,9 @@
   "description": "Live consumer app discovery engine: ingest store charts, score momentum, surface a shortlist.",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "nightly": "node src/run-nightly.ts",
     "ingest:apple": "node src/jobs/ingest-apple.ts",
@@ -26,7 +28,8 @@
     "@supabase/supabase-js": "^2.49.0"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
-    "@types/node": "^24.0.0"
+    "xlsx": "^0.18.5"
   }
 }

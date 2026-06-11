@@ -88,10 +88,21 @@ export type NewLead = {
   raw_payload: Record<string, unknown> | null;
 };
 
+export type NewClassification = {
+  lead_id: string;
+  jaka_score: number | null;
+  market_status: string | null;
+  fit_verdict: string | null;
+  reason: string | null;
+  model_version?: string;
+};
+
 export interface LeadsDb {
   backend: 'supabase' | 'local';
   /** Idempotent on (domain, email); provenance (source_arm) is mandatory. */
   insertLeads(rows: NewLead[]): Promise<number>;
+  /** Append-only, per the 8x_lead_intel contract — reclassification adds rows. */
+  insertClassifications(rows: NewClassification[]): Promise<number>;
   listLeadsJoined(): Promise<LeadJoined[]>;
   updateLeadStages(stages: Map<string, string>): Promise<void>;
   replaceFunnelRollups(rows: FunnelRow[]): Promise<void>;
@@ -137,6 +148,13 @@ class SupabaseLeadsDb implements LeadsDb {
       n += batch.length;
     }
     return n;
+  }
+
+  async insertClassifications(rows: NewClassification[]) {
+    for (let i = 0; i < rows.length; i += 500) {
+      await this.must(this.sb.from('classifications').insert(rows.slice(i, i + 500)));
+    }
+    return rows.length;
   }
 
   async listLeadsJoined() {
@@ -291,6 +309,15 @@ class LocalLeadsDb implements LeadsDb {
     }
     this.save();
     return n;
+  }
+
+  async insertClassifications(rows: NewClassification[]) {
+    const now = new Date().toISOString();
+    for (const r of rows) {
+      this.d.classifications.push({ lead_id: r.lead_id, jaka_score: r.jaka_score, market_status: r.market_status, fit_verdict: r.fit_verdict, reason: r.reason, classified_at: now });
+    }
+    this.save();
+    return rows.length;
   }
 
   async listLeadsJoined() {
