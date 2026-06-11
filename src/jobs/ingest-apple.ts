@@ -4,7 +4,7 @@
  * 2. iTunes Lookup per geo (batched ids) for canonical metadata + per-storefront rating counts.
  * Upserts apps, appends snapshots. Idempotent per day.
  */
-import { COUNTRIES, APPLE_CATEGORIES, CHART_LIMIT } from '../lib/config.ts';
+import { COUNTRIES, APPLE_CATEGORIES, CHART_LIMIT, AI_SEARCH_TERMS, AI_SEARCH_MAX_AGE_DAYS } from '../lib/config.ts';
 import { fetchJson } from '../lib/http.ts';
 import { log } from '../lib/log.ts';
 import { getStore } from '../lib/store.ts';
@@ -30,9 +30,10 @@ type LookupResult = {
   primaryGenreName?: string;
 };
 
-const RSS_CHARTS: { chartType: 'top_free' | 'top_grossing'; feed: string }[] = [
+const RSS_CHARTS: { chartType: string; feed: string }[] = [
   { chartType: 'top_free', feed: 'topfreeapplications' },
   { chartType: 'top_grossing', feed: 'topgrossingapplications' },
+  { chartType: 'new_free', feed: 'newfreeapplications' }, // catches apps before they hit top charts
 ];
 
 export function domainFromUrl(url: string | undefined): string | null {
@@ -87,6 +88,32 @@ export async function runAppleIngest() {
     }
     log.info(`apple rss ${geo}: ${perGeo.size} unique charting apps`);
   }
+
+  // New AI apps via iTunes Search — surfaces recent releases before they chart.
+  const cutoff = Date.now() - AI_SEARCH_MAX_AGE_DAYS * 86_400_000;
+  let aiFound = 0;
+  for (const geo of COUNTRIES) {
+    const perGeo = charted.get(geo)!;
+    for (const term of AI_SEARCH_TERMS) {
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&country=${geo}&entity=software&limit=50`;
+      try {
+        const json = await fetchJson<{ results: (LookupResult & { releaseDate?: string })[] }>(url, { service: 'itunes-lookup', minGapMs: 3200 });
+        (json.results ?? []).forEach((r, i) => {
+          if (!r.trackId || !r.releaseDate || new Date(r.releaseDate).getTime() < cutoff) return;
+          const id = String(r.trackId);
+          const cur = perGeo.get(id) ?? {
+            ranks: {}, category: r.primaryGenreName ?? null, name: r.trackName, artist: r.sellerName ?? '',
+          };
+          cur.ranks['ai_search'] = Math.min(cur.ranks['ai_search'] ?? Infinity, i + 1);
+          perGeo.set(id, cur);
+          aiFound++;
+        });
+      } catch (err) {
+        log.error(`itunes search failed: ${geo}/${term}`, { err: String(err) });
+      }
+    }
+  }
+  log.info(`apple ai-search: ${aiFound} recent AI app hits across geos`);
 
   // Canonical metadata per geo via iTunes Lookup (rating counts are per-storefront).
   const lookups = new Map<string, Map<string, LookupResult>>(); // geo -> id -> result

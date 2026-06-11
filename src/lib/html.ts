@@ -14,9 +14,10 @@ export const esc = (s: unknown) =>
 /** JSON safe to embed inside a <script> tag. */
 export const embedJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-export function pageShell(opts: { title: string; active: string; body: string; script?: string }) {
-  const appsTabs = NAV.filter((n) => n.key === 'apps');
-  const leadTabs = NAV.filter((n) => n.key !== 'apps');
+export function pageShell(opts: { title: string; active: string; body: string; script?: string; app?: 'apps' | 'leads' }) {
+  const app = opts.app ?? (opts.active === 'apps' ? 'apps' : 'leads');
+  const tabs = app === 'apps' ? NAV.filter((n) => n.key === 'apps') : NAV.filter((n) => n.key !== 'apps');
+  const brand = app === 'apps' ? '8x app discovery' : '8x leads';
   const tab = (n: (typeof NAV)[number]) =>
     `<a href="${n.href}" class="tab${opts.active === n.key ? ' active' : ''}">${n.label}</a>`;
   return `<!doctype html>
@@ -62,9 +63,8 @@ export function pageShell(opts: { title: string; active: string; body: string; s
 </style></head>
 <body>
 <header>
-  <h1>8x discovery</h1>
-  <nav class="navgroup"><span class="grouplabel">Apps</span>${appsTabs.map(tab).join('')}</nav>
-  <nav class="navgroup"><span class="grouplabel">Leads</span>${leadTabs.map(tab).join('')}</nav>
+  <h1>${brand}</h1>
+  <nav class="navgroup">${tabs.map(tab).join('')}</nav>
 </header>
 <main>${opts.body}</main>
 ${opts.script ? `<script>${opts.script}</script>` : ''}

@@ -18,6 +18,8 @@
     "enrich": "node src/jobs/enrich-apollo.ts",
     "dashboard": "node src/jobs/build-dashboard.ts",
     "serve": "node src/serve.ts",
+    "serve:apps": "APP_MODE=apps node src/serve.ts",
+    "serve:leads": "APP_MODE=leads node src/serve.ts",
     "leads:sync": "node -e \"import('./src/leads/jobs.ts').then(m => m.runInstantlySync())\"",
     "leads:rollup": "node -e \"import('./src/leads/jobs.ts').then(m => m.runFunnelRollup())\"",
     "leads:suggest": "node -e \"import('./src/leads/jobs.ts').then(m => m.runSuggestionEngine())\"",

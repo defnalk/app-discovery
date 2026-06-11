@@ -12,7 +12,14 @@ export const APPLE_CATEGORIES: { key: string; genreId: number | null }[] = [
   { key: 'finance', genreId: 6015 },
   { key: 'lifestyle', genreId: 6012 },
   { key: 'education', genreId: 6017 },
+  { key: 'utilities', genreId: 6002 },       // AI tools cluster here
+  { key: 'graphics-design', genreId: 6027 }, // and here
 ];
+
+// iTunes Search terms for surfacing new AI apps before they chart.
+export const AI_SEARCH_TERMS = ['AI', 'AI assistant', 'AI photo', 'AI video', 'AI chat'];
+// Only keep search hits released within this window ("new" apps).
+export const AI_SEARCH_MAX_AGE_DAYS = 270;
 
 // Google Play category ids for the same verticals.
 export const PLAY_CATEGORIES: { key: string; playId: string | null }[] = [

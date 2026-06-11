@@ -99,10 +99,12 @@ export async function runScoring() {
   }
 
   // Per-app rollups: composite = best geo score + small breadth bonus.
+  // "Charting strongly" (geo-arbitrage) only counts real top charts — not the
+  // new-apps feed or AI-search positions.
   const strongByApp = new Map<string, string[]>();
   for (const [key, b] of byAppGeo) {
     const [appId, geo] = key.split('|');
-    const r = bestRank(b.recent);
+    const r = bestRank(b.recent.filter((s) => s.chart_type === 'top_free' || s.chart_type === 'top_grossing'));
     if (r != null && r <= SCORING.strongRank) {
       (strongByApp.get(appId) ?? strongByApp.set(appId, []).get(appId)!).push(geo);
     }
