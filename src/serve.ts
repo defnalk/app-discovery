@@ -6,10 +6,25 @@
  * is set, the first request to either must carry ?token=…; a cookie keeps it.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { log } from './lib/log.ts';
 import { pageShell } from './lib/html.ts';
+
+// The apps page is a static build; rebuild it from the database when stale so
+// the served copy always reflects the latest nightly data.
+const REBUILD_AFTER_MS = 6 * 3600_000;
+let rebuilding = false;
+function rebuildIfStale(file: string) {
+  if (rebuilding || !existsSync(file)) return;
+  if (Date.now() - statSync(file).mtimeMs < REBUILD_AFTER_MS) return;
+  rebuilding = true;
+  log.info('apps page stale — rebuilding from database in background');
+  import('./jobs/build-dashboard.ts')
+    .then((m) => m.buildDashboard())
+    .catch((err) => log.error('background dashboard rebuild failed', { err: String(err) }))
+    .finally(() => { rebuilding = false; });
+}
 
 const APPS_PORT = Number(process.env.APPS_PORT ?? 8787);
 const LEADS_PORT = Number(process.env.LEADS_PORT ?? 8788);
@@ -56,8 +71,9 @@ async function main() {
     appsRoutes.set('GET /', (_req, res) => {
       const file = path.join(process.cwd(), 'public', 'index.html');
       if (!existsSync(file)) {
-        return send(res, 200, pageShell({ title: 'App discovery', active: 'apps', app: 'apps', body: '<div class="panel">No dashboard built yet — run <code>npm run dashboard</code>.</div>' }));
+        return send(res, 200, pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body: '<div class="panel">No dashboard built yet — run <code>npm run dashboard</code>.</div>' }));
       }
+      rebuildIfStale(file); // serve current copy now; next refresh gets the fresh build
       send(res, 200, readFileSync(file, 'utf8'));
     });
     makeServer('apps', appsRoutes, APPS_PORT);
