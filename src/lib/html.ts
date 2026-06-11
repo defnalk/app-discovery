@@ -5,6 +5,7 @@ export const NAV = [
   { key: 'pipeline', label: 'Pipeline', href: '/leads' },
   { key: 'approvals', label: 'Approval Queue', href: '/leads/approvals' },
   { key: 'performance', label: 'Performance', href: '/leads/performance' },
+  { key: 'strategy', label: 'Strategy', href: '/leads/strategy' },
   { key: 'settings', label: 'Settings', href: '/leads/settings' },
 ] as const;
 

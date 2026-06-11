@@ -27,6 +27,7 @@ const bucketOf = (s: string | null | undefined) =>
 const POOLS = ['in', 'br', 'tr', 'id', 'mx'];
 const GEOS = [...POOLS, 'us', 'gb', 'de', 'fr', 'unknown'];
 
+export async function computeStrategyData() {
 const store = getStore();
 const leadsDb = getLeadsDb();
 const [apps, rollups, scores, analyses, leads] = await Promise.all([
@@ -95,18 +96,24 @@ const out = {
   expansion_candidates_into_pool: gapInto,
   lead_book: book,
 };
-writeFileSync('data/strategy-input.json', JSON.stringify(out, null, 1));
-
-// readable cross-tab: pools only
-console.log('=== LEAD BOOK vs MARKET HEAT (pool markets) ===');
-for (const b of [...BUCKETS.map((x) => x.key), 'other']) {
-  const row: string[] = [];
-  for (const g of [...POOLS, 'unknown']) {
-    const lb = book[b]?.[g];
-    const mk = market[b]?.[g];
-    if (!lb && !mk) continue;
-    row.push(`${g}: leads=${lb?.total ?? 0}(s${lb?.sendable ?? 0}/q${lb?.qualified ?? 0}) mkt=${mk?.hot ?? 0}hot/${mk?.newEntries ?? 0}new gap-in=${gapInto[b]?.[g] ?? 0}`);
-  }
-  if (row.length) console.log(b.toUpperCase() + '\n  ' + row.join('\n  '));
+return out;
 }
-console.log('\nwritten -> data/strategy-input.json');
+
+export type StrategyData = Awaited<ReturnType<typeof computeStrategyData>>;
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const out = await computeStrategyData();
+  writeFileSync('data/strategy-input.json', JSON.stringify(out, null, 1));
+  console.log('=== LEAD BOOK vs MARKET HEAT (pool markets) ===');
+  for (const b of [...BUCKETS.map((x) => x.key), 'other']) {
+    const row: string[] = [];
+    for (const g of [...POOLS, 'unknown']) {
+      const lb = out.lead_book[b]?.[g];
+      const mk = out.market[b]?.[g];
+      if (!lb && !mk) continue;
+      row.push(`${g}: leads=${lb?.total ?? 0}(s${lb?.sendable ?? 0}/q${lb?.qualified ?? 0}) mkt=${mk?.hot ?? 0}hot gap-in=${out.expansion_candidates_into_pool[b]?.[g] ?? 0}`);
+    }
+    if (row.length) console.log(b.toUpperCase() + '\n  ' + row.join('\n  '));
+  }
+  console.log('\nwritten -> data/strategy-input.json');
+}

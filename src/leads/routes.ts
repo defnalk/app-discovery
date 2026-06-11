@@ -452,8 +452,61 @@ async function resolveSuggestionAction(req: IncomingMessage, res: ServerResponse
   redirect(res, '/leads/settings', `Suggestion #${id} accepted and applied.`);
 }
 
+// ================================================================ Strategy
+async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
+  const db = getLeadsDb();
+  const snap = await db.getLatestStrategySnapshot();
+  const POOLS = ['in', 'br', 'tr', 'id', 'mx'];
+
+  let crossTab = '<div class="panel dim">No snapshot yet — strategy_rollup runs nightly (or run <code>npm run nightly</code>).</div>';
+  if (snap) {
+    const d = snap.data as {
+      market: Record<string, Record<string, { hot: number; charting: number }>>;
+      lead_book: Record<string, Record<string, { total: number; sendable: number; qualified: number }>>;
+      expansion_candidates_into_pool: Record<string, Record<string, number>>;
+    };
+    const buckets = [...new Set([...Object.keys(d.market), ...Object.keys(d.lead_book)])].sort();
+    const heat = (hot: number) => hot >= 100 ? 'rgba(255,107,107,.18)' : hot >= 30 ? 'rgba(255,179,71,.14)' : 'transparent';
+    const rows = buckets.map((b) => {
+      const cells = [...POOLS, 'unknown'].map((g) => {
+        const lb = d.lead_book[b]?.[g];
+        const mk = g === 'unknown' ? null : d.market[b]?.[g];
+        const gap = g === 'unknown' ? 0 : d.expansion_candidates_into_pool[b]?.[g] ?? 0;
+        if (!lb && !mk) return '<td class="dim">–</td>';
+        return `<td style="background:${heat(mk?.hot ?? 0)}">
+          <b>${lb?.total ?? 0}</b> <span class="dim">leads</span> <span class="dim">(${lb?.sendable ?? 0}s/${lb?.qualified ?? 0}q)</span><br>
+          <span class="dim">${mk ? `${mk.hot} hot · ${gap} expanding in` : 'no chart data'}</span></td>`;
+      }).join('');
+      return `<tr><td><b>${esc(b)}</b></td>${cells}</tr>`;
+    }).join('');
+    crossTab = `<div class="panel" style="overflow-x:auto">
+      <h3 style="margin-top:0">Lead book vs market heat <span class="dim">(snapshot ${fmtDate(snap.computed_at)}, refreshed nightly)</span></h3>
+      <table><thead><tr><th>Industry</th>${[...POOLS, 'unknown'].map((g) => `<th>${g}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody></table>
+      <p class="muted-note">Cell = your leads (sendable/qualified) against hot apps (momentum ≥ 0.3) and apps expanding INTO that market (geo-gap). Red tint = heavy market heat.</p></div>`;
+  }
+
+  let doc = '';
+  try {
+    const md = (await import('node:fs')).readFileSync('docs/LEAD-STRATEGY.md', 'utf8');
+    doc = '<div class="panel">' + md.split('\n').map((line) => {
+      const e = esc(line).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+      if (line.startsWith('### ')) return `<h4 style="margin:14px 0 4px">${e.slice(4)}</h4>`;
+      if (line.startsWith('## ')) return `<h3 style="margin:18px 0 6px">${e.slice(3)}</h3>`;
+      if (line.startsWith('# ')) return `<h2 style="margin:0 0 6px">${e.slice(2)}</h2>`;
+      if (line.startsWith('- ')) return `<li>${e.slice(2)}</li>`;
+      if (/^\d+\. /.test(line)) return `<li>${e.replace(/^\d+\. /, '')}</li>`;
+      if (line.startsWith('*') && line.endsWith('*')) return `<p class="dim">${e.replace(/^\*|\*$/g, '')}</p>`;
+      return line.trim() ? `<p style="margin:6px 0">${e}</p>` : '';
+    }).join('') + '</div>';
+  } catch { /* doc optional */ }
+
+  send(res, 200, pageShell({ title: 'Leads · Strategy', active: 'strategy', body: crossTab + doc }));
+}
+
 // ================================================================ registry
 export function registerRoutes(routes: Map<string, Handler>) {
+  routes.set('GET /leads/strategy', strategyPage);
   routes.set('GET /leads', pipelinePage);
   routes.set('GET /leads/approvals', approvalsPage);
   routes.set('POST /leads/approvals/approve', approveAction);

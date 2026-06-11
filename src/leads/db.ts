@@ -123,6 +123,8 @@ export interface LeadsDb {
   resolveSuggestion(id: number, status: 'approved' | 'rejected', by: string): Promise<SuggestionRow | null>;
   insertAudit(a: AuditRow): Promise<void>;
   listAudit(): Promise<AuditRow[]>;
+  insertStrategySnapshot(data: unknown): Promise<void>;
+  getLatestStrategySnapshot(): Promise<{ computed_at: string; data: unknown } | null>;
   recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string): Promise<void>;
 }
 
@@ -274,6 +276,16 @@ class SupabaseLeadsDb implements LeadsDb {
     return this.must<AuditRow[]>(this.sb.from('settings_audit').select('*').order('created_at', { ascending: false }).limit(200));
   }
 
+  async insertStrategySnapshot(data: unknown) {
+    await this.must(this.sb.from('strategy_snapshots').insert({ data, computed_at: new Date().toISOString() }));
+  }
+  async getLatestStrategySnapshot() {
+    const rows = await this.must<{ computed_at: string; data: unknown }[]>(
+      this.sb.from('strategy_snapshots').select('computed_at, data').order('computed_at', { ascending: false }).limit(1),
+    );
+    return rows[0] ?? null;
+  }
+
   async recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string) {
     await this.must(this.sb.from('runs').insert({
       stage, started_at: startedAt, finished_at: new Date().toISOString(),
@@ -401,6 +413,16 @@ class LocalLeadsDb implements LeadsDb {
   }
   async insertAudit(a: AuditRow) { this.d.settings_audit.unshift({ ...a, created_at: new Date().toISOString() }); this.save(); }
   async listAudit() { return this.d.settings_audit; }
+
+  async insertStrategySnapshot(data: unknown) {
+    (this.d as unknown as { strategy_snapshots?: unknown[] }).strategy_snapshots ??= [];
+    (this.d as unknown as { strategy_snapshots: { computed_at: string; data: unknown }[] }).strategy_snapshots.push({ computed_at: new Date().toISOString(), data });
+    this.save();
+  }
+  async getLatestStrategySnapshot() {
+    const snaps = (this.d as unknown as { strategy_snapshots?: { computed_at: string; data: unknown }[] }).strategy_snapshots ?? [];
+    return snaps[snaps.length - 1] ?? null;
+  }
   async recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string) {
     this.d.runs.push({ stage, started_at: startedAt, finished_at: new Date().toISOString(), ...counts, notes });
     this.save();

@@ -161,9 +161,23 @@ export async function runSuggestionEngine() {
   return { suggestions: written };
 }
 
+// ---------------------------------------------------------------- 4. strategy_rollup
+/** Recompute the delta-CRM cross-tab (lead book vs market heat) nightly. */
+export async function runStrategyRollup() {
+  const db = getLeadsDb();
+  const startedAt = new Date().toISOString();
+  const { computeStrategyData } = await import('./strategy-data.ts');
+  const data = await computeStrategyData();
+  await db.insertStrategySnapshot(data);
+  await db.recordRun('strategy_rollup', startedAt, { output: 1 });
+  log.info('strategy_rollup: delta-CRM cross-tab snapshot stored');
+  return { ok: true };
+}
+
 /** Bolted onto the nightly orchestrator; same failure-isolation rules. */
 export const nightlyJobs = [
   { name: 'instantly_sync', run: runInstantlySync },
   { name: 'funnel_rollup', run: runFunnelRollup },
   { name: 'suggestion_engine', run: runSuggestionEngine },
+  { name: 'strategy_rollup', run: runStrategyRollup },
 ];
