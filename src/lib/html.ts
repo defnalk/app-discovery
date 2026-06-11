@@ -17,7 +17,7 @@ export const embedJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003
 export function pageShell(opts: { title: string; active: string; body: string; script?: string; app?: 'apps' | 'leads' }) {
   const app = opts.app ?? (opts.active === 'apps' ? 'apps' : 'leads');
   const tabs = app === 'apps' ? NAV.filter((n) => n.key === 'apps') : NAV.filter((n) => n.key !== 'apps');
-  const brand = app === 'apps' ? '8x app discovery' : '8x leads';
+  const brand = app === 'apps' ? 'Play Database' : '8x leads';
   const tab = (n: (typeof NAV)[number]) =>
     `<a href="${n.href}" class="tab${opts.active === n.key ? ' active' : ''}">${n.label}</a>`;
   return `<!doctype html>
@@ -28,10 +28,9 @@ export function pageShell(opts: { title: string; active: string; body: string; s
   :root { --bg:#0e1116; --panel:#161b24; --line:#252c3a; --txt:#dbe2ee; --dim:#8694ab; --acc:#4da3ff; --good:#3fcf8e; --warn:#ffb347; --bad:#ff6b6b; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif; }
-  header { display:flex; align-items:center; gap:18px; padding:10px 20px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
-  header h1 { font-size:15px; margin:0 14px 0 0; white-space:nowrap; }
-  .navgroup { display:flex; gap:4px; align-items:center; }
-  .navgroup .grouplabel { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin:0 6px; }
+  header { display:flex; align-items:center; gap:18px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 14px 0 0; white-space:nowrap; line-height:1; }
+  .navgroup { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
   .tab { color:var(--dim); text-decoration:none; padding:5px 10px; border-radius:6px; }
   .tab.active { color:var(--txt); background:var(--line); }
   .tab:hover { color:var(--txt); }
@@ -39,7 +38,7 @@ export function pageShell(opts: { title: string; active: string; body: string; s
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:16px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:49px; background:var(--panel); }
+  th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; }
   tr:hover td { background:#1a2130; }
   input[type=text], input[type=search], select, input[type=number], input[type=date] {
     background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px; }

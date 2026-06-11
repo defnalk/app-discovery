@@ -203,7 +203,7 @@ document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
 ['q','geo','cat','seen','mom','gap','hideinc'].forEach(id => $('#'+id).addEventListener('input', render));
 render();`;
 
-  const html = pageShell({ title: 'App discovery', active: 'apps', body, script });
+  const html = pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body, script });
   const out = path.join(process.cwd(), 'public', 'index.html');
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, html);
