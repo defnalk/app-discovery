@@ -459,12 +459,39 @@ async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
   const POOLS = ['in', 'br', 'tr', 'id', 'mx'];
 
   let crossTab = '<div class="panel dim">No snapshot yet — strategy_rollup runs nightly (or run <code>npm run nightly</code>).</div>';
+  let armTab = '';
   if (snap) {
     const d = snap.data as {
       market: Record<string, Record<string, { hot: number; charting: number }>>;
       lead_book: Record<string, Record<string, { total: number; sendable: number; qualified: number }>>;
+      lead_book_by_arm?: Record<string, Record<string, { total: number; sendable: number; qualified: number; sent: number; withEmail: number }>>;
       expansion_candidates_into_pool: Record<string, Record<string, number>>;
+      geos?: string[];
     };
+
+    if (d.lead_book_by_arm) {
+      const geos = d.geos ?? ['in', 'br', 'tr', 'id', 'mx', 'us', 'gb', 'de', 'fr', 'unknown'];
+      const armRows = Object.entries(d.lead_book_by_arm).sort((a, b) => {
+        const sum = (x: typeof a[1]) => Object.values(x).reduce((s, c) => s + c.total, 0);
+        return sum(b[1]) - sum(a[1]);
+      }).map(([arm, cells]) => {
+        const totals = Object.values(cells).reduce((s, c) => ({
+          total: s.total + c.total, sendable: s.sendable + c.sendable, qualified: s.qualified + c.qualified, withEmail: s.withEmail + c.withEmail,
+        }), { total: 0, sendable: 0, qualified: 0, withEmail: 0 });
+        const geoCells = geos.map((g) => {
+          const c = cells[g];
+          if (!c) return '<td class="dim">–</td>';
+          return `<td><b>${c.total}</b><br><span class="dim">${c.sendable}s/${c.qualified}q</span></td>`;
+        }).join('');
+        return `<tr><td><span class="pill">${esc(arm)}</span><br><span class="dim">${totals.withEmail} w/ email</span></td>
+          <td class="num"><b>${totals.total}</b><br><span class="dim">${totals.sendable}s/${totals.qualified}q</span></td>${geoCells}</tr>`;
+      }).join('');
+      armTab = `<div class="panel" style="overflow-x:auto">
+        <h3 style="margin-top:0">Leads by sourcing strategy × geo <span class="dim">(snapshot ${fmtDate(snap.computed_at)})</span></h3>
+        <table><thead><tr><th>Strategy arm</th><th class="num">Total</th>${geos.map((g) => `<th>${g}</th>`).join('')}</tr></thead>
+        <tbody>${armRows}</tbody></table>
+        <p class="muted-note">s = clean sendable · q = ICP qualified. The same split drives the A/B readout on Performance once sends begin.</p></div>`;
+    }
     const buckets = [...new Set([...Object.keys(d.market), ...Object.keys(d.lead_book)])].sort();
     const heat = (hot: number) => hot >= 100 ? 'rgba(255,107,107,.18)' : hot >= 30 ? 'rgba(255,179,71,.14)' : 'transparent';
     const rows = buckets.map((b) => {
@@ -501,7 +528,7 @@ async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
     }).join('') + '</div>';
   } catch { /* doc optional */ }
 
-  send(res, 200, pageShell({ title: 'Leads · Strategy', active: 'strategy', body: crossTab + doc }));
+  send(res, 200, pageShell({ title: 'Leads · Strategy', active: 'strategy', body: armTab + crossTab + doc }));
 }
 
 // ================================================================ registry

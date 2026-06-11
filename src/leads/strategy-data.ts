@@ -68,9 +68,11 @@ for (const r of rollups) {
   for (const g of r.geo_gap ?? []) ((gapInto[b] ??= {})[g] = ((gapInto[b] ??= {})[g] ?? 0) + 1);
 }
 
-// ---- lead side: per bucket x geo
+// ---- lead side: per bucket x geo AND per sourcing-strategy arm x geo
 type LeadCell = { total: number; qualified: number; sendable: number; tierA: number; arms: Record<string, number> };
 const book: Record<string, Record<string, LeadCell>> = {};
+type ArmCell = { total: number; qualified: number; sendable: number; sent: number; withEmail: number };
+const byArm: Record<string, Record<string, ArmCell>> = {};
 for (const l of leads) {
   const b = bucketOf(l.category);
   const g = GEOS.includes(l.geo ?? '') ? l.geo! : 'unknown';
@@ -80,6 +82,13 @@ for (const l of leads) {
   if (l.stage === 'sendable') c.sendable++;
   if ((l.jaka_score ?? 0) >= 8) c.tierA++;
   c.arms[l.source_arm] = (c.arms[l.source_arm] ?? 0) + 1;
+
+  const a = ((byArm[l.source_arm] ??= {})[g] ??= { total: 0, qualified: 0, sendable: 0, sent: 0, withEmail: 0 });
+  a.total++;
+  if (isQualified(l)) a.qualified++;
+  if (l.stage === 'sendable') a.sendable++;
+  if (l.stage === 'sent' || l.stage === 'replied' || l.stage === 'meeting') a.sent++;
+  if (l.email) a.withEmail++;
 }
 
 const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -95,6 +104,8 @@ const out = {
     }]))])),
   expansion_candidates_into_pool: gapInto,
   lead_book: book,
+  lead_book_by_arm: byArm,
+  geos: GEOS,
 };
 return out;
 }
