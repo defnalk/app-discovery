@@ -1,0 +1,8 @@
+node_modules/
+.env
+data/
+logs/
+public/index.html
+leads_out/
+*.log
+.DS_Store

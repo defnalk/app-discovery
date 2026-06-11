@@ -1,0 +1,32 @@
+{
+  "name": "app-discovery",
+  "version": "0.1.0",
+  "description": "Live consumer app discovery engine: ingest store charts, score momentum, surface a shortlist.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "nightly": "node src/run-nightly.ts",
+    "ingest:apple": "node src/jobs/ingest-apple.ts",
+    "ingest:play": "node src/jobs/ingest-play.ts",
+    "ingest:producthunt": "node src/jobs/ingest-producthunt.ts",
+    "ingest:x": "node src/jobs/ingest-x.ts",
+    "score": "node src/jobs/score.ts",
+    "factcheck": "node src/jobs/factcheck.ts",
+    "enrich": "node src/jobs/enrich-apollo.ts",
+    "dashboard": "node src/jobs/build-dashboard.ts",
+    "serve": "node src/serve.ts",
+    "leads:sync": "node -e \"import('./src/leads/jobs.ts').then(m => m.runInstantlySync())\"",
+    "leads:rollup": "node -e \"import('./src/leads/jobs.ts').then(m => m.runFunnelRollup())\"",
+    "leads:suggest": "node -e \"import('./src/leads/jobs.ts').then(m => m.runSuggestionEngine())\"",
+    "leads:seed-demo": "LOCAL_STORE=1 node src/leads/seed-demo.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^24.0.0"
+  }
+}
