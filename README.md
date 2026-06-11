@@ -44,6 +44,7 @@ demo data.
 | `npm run ingest:producthunt` | PH daily top consumer posts → claims (needs `PRODUCT_HUNT_TOKEN`) |
 | `npm run score` | momentum per app per geo + rollups + geo-arbitrage flags |
 | `npm run factcheck` | claimed vs verified numbers; >3× flags suspect |
+| `node src/jobs/analyze.ts` | idea/saturation/buildability analysis of new shortlist apps (Haiku; needs `ANTHROPIC_API_KEY`); too-complex apps dropped from shortlist |
 | `npm run enrich` | Apollo enrichment of shortlist → `leads_out/*.csv` + leads pipeline (`source=app_discovery`) |
 | `npm run dashboard` | rebuild static apps page (`public/index.html`) |
 | `npm run serve` | serve dashboard at :8787 (set `DASHBOARD_TOKEN` to gate with `?token=…`) |
