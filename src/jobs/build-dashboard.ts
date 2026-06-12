@@ -80,6 +80,36 @@ export async function buildDashboard() {
   const categories = [...new Set(rows.map((r) => r!.category).filter(Boolean))].sort();
   const geos = [...new Set(rows.flatMap((r) => r!.geos))].sort();
 
+  // App Store-style top charts: latest day's top 5 per (geo, chart type, category).
+  // Ranks come from per-genre feeds, so they are only comparable within a category;
+  // the cross-category "hot" card ranks by our momentum score instead. Entries
+  // reference ROWS by index.
+  const TOP_N = 5;
+  const latestDay = snaps.reduce((m, s) => (s.snapshot_date > m ? s.snapshot_date : m), '');
+  const rowIndexByApp = new Map(rows.map((r, i) => [r!.id, i]));
+  const chartAcc = new Map<string, Map<number, number>>(); // "geo|chart|category" -> row index -> best rank
+  const hotAcc = new Map<string, Set<number>>(); // "geo|chart" -> row indices charting today
+  for (const s of snaps) {
+    if (s.snapshot_date !== latestDay || s.chart_rank == null) continue;
+    const idx = rowIndexByApp.get(s.app_id);
+    if (idx == null) continue; // not in the table (too complex / no rollup) — keep charts consistent with it
+    const cat = appById.get(s.app_id)?.category || 'Other';
+    const key = `${s.geo}|${s.chart_type}|${cat}`;
+    const m = chartAcc.get(key) ?? chartAcc.set(key, new Map()).get(key)!;
+    m.set(idx, Math.min(m.get(idx) ?? Infinity, s.chart_rank));
+    const hotKey = `${s.geo}|${s.chart_type}`;
+    (hotAcc.get(hotKey) ?? hotAcc.set(hotKey, new Set()).get(hotKey)!).add(idx);
+  }
+  const topCharts: Record<string, [number, number][]> = {};
+  for (const [key, m] of chartAcc) topCharts[key] = [...m].sort((a, b) => a[1] - b[1]).slice(0, TOP_N);
+  const hotCharts: Record<string, number[]> = {};
+  for (const [key, set] of hotAcc) {
+    hotCharts[key] = [...set].sort((a, b) => rows[b]!.momentum - rows[a]!.momentum).slice(0, TOP_N);
+  }
+  const tcGeos = [...new Set([...chartAcc.keys()].map((k) => k.split('|')[0]))].sort();
+  const tcChartSet = new Set([...chartAcc.keys()].map((k) => k.split('|')[1]));
+  const tcCharts = ['top_free', 'top_grossing', 'new_free', 'ai_search'].filter((c) => tcChartSet.has(c));
+
   // Data-source status, derived from which keys are configured at build time.
   const SOURCES: { name: string; desc: string; env: string | null; note?: string }[] = [
     { name: 'Apple App Store', desc: 'charts · scoring · fact-check · dashboard', env: null },
@@ -108,6 +138,15 @@ export async function buildDashboard() {
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
   <p class="muted-note">A source activates the moment its key is added as a GitHub secret — no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
 </details>
+<div class="panel">
+  <div class="filters" style="margin-bottom:10px">
+    <b>Top charts</b>
+    <label>Geo <select id="tc-geo"></select></label>
+    <label>Chart <select id="tc-chart"></select></label>
+    <span class="dim">top ${TOP_N} tracked apps per category · #n = store chart rank · ${esc(latestDay)} · click an app for details</span>
+  </div>
+  <div id="tc-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"></div>
+</div>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
   <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
@@ -130,6 +169,11 @@ export async function buildDashboard() {
 
   const script = `
 const ROWS = ${embedJson(rows)};
+const TOP = ${embedJson(topCharts)};
+const HOT = ${embedJson(hotCharts)};
+const TC_GEOS = ${embedJson(tcGeos)};
+const TC_CHARTS = ${embedJson(tcCharts)};
+const CHART_LABELS = { top_free: 'Top Free', top_grossing: 'Top Grossing', new_free: 'New Apps', ai_search: 'AI Search' };
 const $ = (s) => document.querySelector(s);
 let sortKey = 'momentum', sortDir = -1;
 const fmt = (n) => n == null ? '–' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
@@ -195,13 +239,60 @@ function detailHtml(r) {
       '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a></p></div></div>';
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// --- Top charts (App Store style) ---
+const flagEmoji = (g) => g.length === 2 ? String.fromCodePoint(...[...g.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0))) : '';
+function tcCard(title, items) {
+  return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px">' +
+    '<div style="font-weight:600;margin-bottom:6px">' + title + '</div>' +
+    (items.length ? '<ol style="margin:0;padding:0;list-style:none">' + items.map((it, n) =>
+      '<li class="tc-app" data-i="' + it.i + '" style="display:flex;gap:8px;align-items:baseline;padding:3px 0;cursor:pointer">' +
+      '<span class="dim" style="width:16px;text-align:right;font-variant-numeric:tabular-nums;flex:none">' + (n + 1) + '</span>' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escq(ROWS[it.i].name) +
+        (ROWS[it.i].incumbent ? ' <span class="pill">inc</span>' : '') + '</span>' +
+      '<span class="dim" style="font-size:11px;flex:none">' + it.note + '</span></li>').join('') + '</ol>'
+    : '<span class="dim" style="font-size:12px">nothing charting</span>') + '</div>';
+}
+function renderTopCharts() {
+  const geo = $('#tc-geo').value, chart = $('#tc-chart').value;
+  const prefix = geo + '|' + chart + '|';
+  const cats = Object.keys(TOP).filter(k => k.startsWith(prefix)).map(k => k.slice(prefix.length))
+    .sort((a, b) => a.localeCompare(b));
+  const ranked = (key) => (TOP[key] || []).map(([i, r]) => ({ i, note: '#' + r }));
+  const hot = (HOT[geo + '|' + chart] || []).map(i => ({ i, note: ROWS[i].momentum.toFixed(2) }));
+  const withDelta = ROWS.map((r, i) => ({ i, d: (r.deltas || []).find(d => d.geo === geo) }));
+  const movers = withDelta.filter(x => x.d && x.d.prev != null && (x.d.vel || 0) > 0)
+    .sort((a, b) => b.d.vel - a.d.vel).slice(0, 5).map(x => ({ i: x.i, note: '\\u25b2 +' + x.d.vel }));
+  const fresh = withDelta.filter(x => x.d && x.d.prev == null && x.d.now != null)
+    .sort((a, b) => a.d.now - b.d.now).slice(0, 5).map(x => ({ i: x.i, note: '#' + x.d.now }));
+  $('#tc-grid').innerHTML = [
+    tcCard('\\u2b50 Hot right now <span class="dim" style="font-weight:400;font-size:11px">by momentum</span>', hot),
+    tcCard('\\ud83d\\ude80 Top movers (7d)', movers),
+    tcCard('\\ud83c\\udd95 New on charts', fresh),
+    ...cats.map(c => tcCard(escq(c), ranked(prefix + c))),
+  ].join('');
+  document.querySelectorAll('.tc-app').forEach(li => li.onclick = () => openApp(+li.dataset.i));
+}
+function openApp(i) {
+  $('#q').value = ROWS[i].name;
+  ['geo','cat','seen','mom'].forEach(id => $('#' + id).value = '');
+  $('#gap').checked = false; $('#hideinc').checked = false;
+  render();
+  const tr = document.querySelector('tr.approw[data-i="' + i + '"]');
+  if (tr) { tr.click(); tr.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+$('#tc-geo').innerHTML = TC_GEOS.map(g => '<option value="' + g + '"' + (g === 'us' ? ' selected' : '') + '>' + flagEmoji(g) + ' ' + g.toUpperCase() + '</option>').join('');
+$('#tc-chart').innerHTML = TC_CHARTS.map(c => '<option value="' + c + '">' + (CHART_LABELS[c] || c) + '</option>').join('');
+['tc-geo','tc-chart'].forEach(id => $('#' + id).addEventListener('input', renderTopCharts));
+
 document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   const k = th.dataset.k;
   sortDir = sortKey === k ? -sortDir : (k === 'name' || k === 'category' || k === 'first_seen' ? 1 : -1);
   sortKey = k; render();
 });
 ['q','geo','cat','seen','mom','gap','hideinc'].forEach(id => $('#'+id).addEventListener('input', render));
-render();`;
+render();
+renderTopCharts();`;
 
   const html = pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body, script });
   const out = path.join(process.cwd(), 'public', 'index.html');

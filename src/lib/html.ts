@@ -24,6 +24,7 @@ export function pageShell(opts: { title: string; active: string; body: string; s
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
 <title>${esc(opts.title)}</title>
 <style>
   :root { --bg:#0e1116; --panel:#161b24; --line:#252c3a; --txt:#dbe2ee; --dim:#8694ab; --acc:#4da3ff; --good:#3fcf8e; --warn:#ffb347; --bad:#ff6b6b; }
