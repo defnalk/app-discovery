@@ -456,6 +456,14 @@ async function resolveSuggestionAction(req: IncomingMessage, res: ServerResponse
 async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
   const db = getLeadsDb();
   const snap = await db.getLatestStrategySnapshot();
+  // Day-over-day delta: compare against the last snapshot from a previous day.
+  const dayStart = snap ? snap.computed_at.slice(0, 10) + 'T00:00:00Z' : '';
+  const prev = snap ? await db.getStrategySnapshotBefore(dayStart) : null;
+  const delta = (now: number, before: number | undefined) => {
+    if (before == null || now === before) return '';
+    const d = now - before;
+    return ` <span style="color:${d > 0 ? 'var(--good)' : 'var(--bad)'};font-size:11px">${d > 0 ? '▲+' : '▼'}${d}</span>`;
+  };
   const POOLS = ['in', 'br', 'tr', 'id', 'mx'];
 
   let crossTab = '<div class="panel dim">No snapshot yet — strategy_rollup runs nightly (or run <code>npm run nightly</code>).</div>';
@@ -470,39 +478,47 @@ async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
     };
 
     if (d.lead_book_by_arm) {
+      const pd = (prev?.data ?? null) as typeof d | null;
       const geos = d.geos ?? ['in', 'br', 'tr', 'id', 'mx', 'us', 'gb', 'de', 'fr', 'unknown'];
       const armRows = Object.entries(d.lead_book_by_arm).sort((a, b) => {
         const sum = (x: typeof a[1]) => Object.values(x).reduce((s, c) => s + c.total, 0);
         return sum(b[1]) - sum(a[1]);
       }).map(([arm, cells]) => {
-        const totals = Object.values(cells).reduce((s, c) => ({
-          total: s.total + c.total, sendable: s.sendable + c.sendable, qualified: s.qualified + c.qualified, withEmail: s.withEmail + c.withEmail,
-        }), { total: 0, sendable: 0, qualified: 0, withEmail: 0 });
+        const sumUp = (cs: Record<string, { total: number; sendable: number; qualified: number; withEmail: number }> | undefined) =>
+          Object.values(cs ?? {}).reduce((s, c) => ({
+            total: s.total + c.total, sendable: s.sendable + c.sendable, qualified: s.qualified + c.qualified, withEmail: s.withEmail + c.withEmail,
+          }), { total: 0, sendable: 0, qualified: 0, withEmail: 0 });
+        const totals = sumUp(cells);
+        const prevTotals = pd?.lead_book_by_arm ? sumUp(pd.lead_book_by_arm[arm]) : undefined;
         const geoCells = geos.map((g) => {
           const c = cells[g];
           if (!c) return '<td class="dim">–</td>';
-          return `<td><b>${c.total}</b><br><span class="dim">${c.sendable}s/${c.qualified}q</span></td>`;
+          const p = pd?.lead_book_by_arm?.[arm]?.[g];
+          return `<td><b>${c.total}</b>${delta(c.total, p?.total)}<br><span class="dim">${c.sendable}s${delta(c.sendable, p?.sendable)}/${c.qualified}q</span></td>`;
         }).join('');
         return `<tr><td><span class="pill">${esc(arm)}</span><br><span class="dim">${totals.withEmail} w/ email</span></td>
-          <td class="num"><b>${totals.total}</b><br><span class="dim">${totals.sendable}s/${totals.qualified}q</span></td>${geoCells}</tr>`;
+          <td class="num"><b>${totals.total}</b>${delta(totals.total, prevTotals?.total)}<br><span class="dim">${totals.sendable}s${delta(totals.sendable, prevTotals?.sendable)}/${totals.qualified}q${delta(totals.qualified, prevTotals?.qualified)}</span></td>${geoCells}</tr>`;
       }).join('');
       armTab = `<div class="panel" style="overflow-x:auto">
-        <h3 style="margin-top:0">Leads by sourcing strategy × geo <span class="dim">(snapshot ${fmtDate(snap.computed_at)})</span></h3>
+        <h3 style="margin-top:0">Leads by sourcing strategy × geo <span class="dim">(snapshot ${fmtDate(snap.computed_at)}${prev ? ` · Δ vs ${fmtDate(prev.computed_at)}` : ' · deltas appear after the next nightly snapshot'})</span></h3>
         <table><thead><tr><th>Strategy arm</th><th class="num">Total</th>${geos.map((g) => `<th>${g}</th>`).join('')}</tr></thead>
         <tbody>${armRows}</tbody></table>
-        <p class="muted-note">s = clean sendable · q = ICP qualified. The same split drives the A/B readout on Performance once sends begin.</p></div>`;
+        <p class="muted-note">s = clean sendable · q = ICP qualified · ▲▼ = change since the previous day's snapshot. The same split drives the A/B readout on Performance once sends begin.</p></div>`;
     }
     const buckets = [...new Set([...Object.keys(d.market), ...Object.keys(d.lead_book)])].sort();
     const heat = (hot: number) => hot >= 100 ? 'rgba(255,107,107,.18)' : hot >= 30 ? 'rgba(255,179,71,.14)' : 'transparent';
+    const pd2 = (prev?.data ?? null) as typeof d | null;
     const rows = buckets.map((b) => {
       const cells = [...POOLS, 'unknown'].map((g) => {
         const lb = d.lead_book[b]?.[g];
         const mk = g === 'unknown' ? null : d.market[b]?.[g];
         const gap = g === 'unknown' ? 0 : d.expansion_candidates_into_pool[b]?.[g] ?? 0;
         if (!lb && !mk) return '<td class="dim">–</td>';
+        const pmk = g === 'unknown' ? null : pd2?.market?.[b]?.[g];
+        const plb = pd2?.lead_book?.[b]?.[g];
         return `<td style="background:${heat(mk?.hot ?? 0)}">
-          <b>${lb?.total ?? 0}</b> <span class="dim">leads</span> <span class="dim">(${lb?.sendable ?? 0}s/${lb?.qualified ?? 0}q)</span><br>
-          <span class="dim">${mk ? `${mk.hot} hot · ${gap} expanding in` : 'no chart data'}</span></td>`;
+          <b>${lb?.total ?? 0}</b>${delta(lb?.total ?? 0, plb ? plb.total : undefined)} <span class="dim">leads</span> <span class="dim">(${lb?.sendable ?? 0}s/${lb?.qualified ?? 0}q)</span><br>
+          <span class="dim">${mk ? `${mk.hot} hot${delta(mk.hot, pmk ? pmk.hot : undefined)} · ${gap} expanding in` : 'no chart data'}</span></td>`;
       }).join('');
       return `<tr><td><b>${esc(b)}</b></td>${cells}</tr>`;
     }).join('');

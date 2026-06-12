@@ -125,6 +125,8 @@ export interface LeadsDb {
   listAudit(): Promise<AuditRow[]>;
   insertStrategySnapshot(data: unknown): Promise<void>;
   getLatestStrategySnapshot(): Promise<{ computed_at: string; data: unknown } | null>;
+  /** Latest snapshot strictly before the given instant (for day-over-day deltas). */
+  getStrategySnapshotBefore(iso: string): Promise<{ computed_at: string; data: unknown } | null>;
   recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string): Promise<void>;
 }
 
@@ -285,6 +287,12 @@ class SupabaseLeadsDb implements LeadsDb {
     );
     return rows[0] ?? null;
   }
+  async getStrategySnapshotBefore(iso: string) {
+    const rows = await this.must<{ computed_at: string; data: unknown }[]>(
+      this.sb.from('strategy_snapshots').select('computed_at, data').lt('computed_at', iso).order('computed_at', { ascending: false }).limit(1),
+    );
+    return rows[0] ?? null;
+  }
 
   async recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string) {
     await this.must(this.sb.from('runs').insert({
@@ -422,6 +430,10 @@ class LocalLeadsDb implements LeadsDb {
   async getLatestStrategySnapshot() {
     const snaps = (this.d as unknown as { strategy_snapshots?: { computed_at: string; data: unknown }[] }).strategy_snapshots ?? [];
     return snaps[snaps.length - 1] ?? null;
+  }
+  async getStrategySnapshotBefore(iso: string) {
+    const snaps = (this.d as unknown as { strategy_snapshots?: { computed_at: string; data: unknown }[] }).strategy_snapshots ?? [];
+    return [...snaps].reverse().find((s) => s.computed_at < iso) ?? null;
   }
   async recordRun(stage: string, startedAt: string, counts: { input?: number; output?: number; errors?: number }, notes?: string) {
     this.d.runs.push({ stage, started_at: startedAt, finished_at: new Date().toISOString(), ...counts, notes });
