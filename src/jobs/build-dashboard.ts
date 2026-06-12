@@ -5,6 +5,7 @@
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { createClient } from '@supabase/supabase-js';
 import { log } from '../lib/log.ts';
 import { getStore } from '../lib/store.ts';
 import { pageShell, embedJson, sparkline, esc } from '../lib/html.ts';
@@ -300,7 +301,34 @@ renderTopCharts();`;
   writeFileSync(out, html);
   await store.recordRun('dashboard', startedAt, true, { rows: rows.length });
   log.info(`dashboard: ${rows.length} rows -> public/index.html`);
-  return { rows: rows.length };
+  const published = await publishDashboard(html);
+  return { rows: rows.length, published };
+}
+
+/**
+ * Publish the built page to the public `dashboard` Supabase Storage bucket so the
+ * team link stays fresh after every build (nightly CI + local stale rebuilds).
+ * Deliberately a no-op until that bucket exists: creating a public bucket is the
+ * conscious make-this-public step, done by a human in the Supabase UI, not here.
+ */
+async function publishDashboard(html: string): Promise<boolean> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key || process.env.LOCAL_STORE === '1') return false;
+  const supabase = createClient(url, key);
+  const { error } = await supabase.storage.from('dashboard').upload('index.html', html, {
+    contentType: 'text/html; charset=utf-8', cacheControl: '300', upsert: true,
+  });
+  if (error) {
+    if (/bucket not found/i.test(error.message)) {
+      log.info('dashboard publish skipped — create a public "dashboard" bucket in Supabase Storage to go live');
+    } else {
+      log.error('dashboard publish failed', { err: error.message });
+    }
+    return false;
+  }
+  log.info(`dashboard published -> ${url}/storage/v1/object/public/dashboard/index.html`);
+  return true;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
