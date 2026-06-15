@@ -35,13 +35,20 @@ export async function buildDashboard() {
     m.set(d, Math.min(m.get(d) ?? Infinity, s.chart_rank));
   }
 
+  // Curation for the shared "Play Database" page: show only startup-built apps that
+  // are fast to vibecode. Incumbents (Spotify, Google Maps, ChatGPT-scale) and
+  // slow/unanalyzed builds are dropped from the page — they stay in the DB, just
+  // off this view. Tighten to ['weekend','few_days'] for a strict ≤1-week list.
+  const QUICK_BUILD = new Set(['weekend', 'few_days', 'week_or_two']);
   const rows = rollups
     .map((r) => {
       const app = appById.get(r.app_id);
       if (!app) return null;
       if (app.status === 'too_complex') return null; // dropped by analysis; kept in DB only
-      const series = days.map((d) => rankByAppDay.get(r.app_id)?.get(d) ?? null);
+      if (r.is_incumbent) return null; // no Spotify / Google Maps / ChatGPT-scale apps
       const an = analysisById.get(r.app_id);
+      if (!QUICK_BUILD.has(an?.buildability ?? '')) return null; // only quick-to-vibecode startup apps
+      const series = days.map((d) => rankByAppDay.get(r.app_id)?.get(d) ?? null);
       const deltas = (scoresByApp.get(r.app_id) ?? [])
         .filter((s) => s.rank_now != null)
         .sort((a, b) => (a.rank_now ?? 999) - (b.rank_now ?? 999))
@@ -155,7 +162,6 @@ export async function buildDashboard() {
   <label>First seen <select id="seen"><option value="">any time</option><option value="7">last 7d</option><option value="30">last 30d</option><option value="90">last 90d</option></select></label>
   <label>Momentum ≥ <input type="number" id="mom" step="0.05" style="width:70px"></label>
   <label><input type="checkbox" id="gap"> geo-gap only</label>
-  <label><input type="checkbox" id="hideinc" checked> hide incumbents</label>
   <span class="dim" id="count"></span>
 </div>
 <div class="panel" style="overflow-x:auto">
@@ -165,7 +171,7 @@ export async function buildDashboard() {
   <th data-k="idea" class="num">Idea</th><th data-k="build">Build</th><th data-k="sat" class="num">Satur.</th>
   <th data-k="rating_count" class="num">Verified ratings</th><th>Fact check</th><th data-k="first_seen">First caught</th>
 </tr></thead><tbody></tbody></table>
-<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} apps · click a row for per-geo deltas &amp; analysis · incumbents kept but excluded from shortlist · too-complex apps removed · read-only</p>
+<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} startup apps buildable in ≤2 weeks with AI · click a row for per-geo deltas &amp; analysis · incumbents &amp; slow/too-complex builds removed · read-only</p>
 </div>`;
 
   const script = `
@@ -182,12 +188,12 @@ function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
   const seen = $('#seen').value ? Date.now() - (+$('#seen').value)*864e5 : null;
   const mom = $('#mom').value === '' ? null : +$('#mom').value;
-  const gap = $('#gap').checked, hideInc = $('#hideinc').checked;
+  const gap = $('#gap').checked;
   let rows = ROWS.filter(r =>
     (!q || r.name.toLowerCase().includes(q) || (r.developer||'').toLowerCase().includes(q)) &&
     (!geo || r.geos.includes(geo)) && (!cat || r.category === cat) &&
     (seen == null || new Date(r.first_seen).getTime() >= seen) &&
-    (mom == null || r.momentum >= mom) && (!gap || r.geo_gap.length) && (!hideInc || !r.incumbent));
+    (mom == null || r.momentum >= mom) && (!gap || r.geo_gap.length));
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   $('#count').textContent = rows.length + ' shown';
@@ -277,7 +283,7 @@ function renderTopCharts() {
 function openApp(i) {
   $('#q').value = ROWS[i].name;
   ['geo','cat','seen','mom'].forEach(id => $('#' + id).value = '');
-  $('#gap').checked = false; $('#hideinc').checked = false;
+  $('#gap').checked = false;
   render();
   const tr = document.querySelector('tr.approw[data-i="' + i + '"]');
   if (tr) { tr.click(); tr.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -291,7 +297,7 @@ document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   sortDir = sortKey === k ? -sortDir : (k === 'name' || k === 'category' || k === 'first_seen' ? 1 : -1);
   sortKey = k; render();
 });
-['q','geo','cat','seen','mom','gap','hideinc'].forEach(id => $('#'+id).addEventListener('input', render));
+['q','geo','cat','seen','mom','gap'].forEach(id => $('#'+id).addEventListener('input', render));
 render();
 renderTopCharts();`;
 
