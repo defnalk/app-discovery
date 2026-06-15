@@ -80,10 +80,33 @@ export async function buildDashboard() {
         shortlisted: r.shortlisted,
         first_seen: app.first_seen_at.slice(0, 10),
         spark: sparkline(series),
+        play: 0,
+        play_rank: 0,
       };
     })
-    .filter((r) => r != null)
-    .sort((a, b) => b!.momentum - a!.momentum);
+    .filter((r) => r != null);
+
+  // Composite "play score" (0–100): how attractive each app is to build a play
+  // of right now, combining every score we have — idea quality, momentum, an open
+  // market (low saturation), build speed, and proven traction. Fact-check-suspect
+  // apps are discounted. The top 100 by this score are the headline "plays".
+  const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const moms = rows.map((r) => r!.momentum).sort((a, b) => a - b);
+  const momCap = moms.length ? Math.max(1e-9, moms[Math.min(moms.length - 1, Math.floor(moms.length * 0.95))]!) : 1;
+  const ratingMax = Math.max(1e-9, ...rows.map((r) => Math.log10(1 + (r!.rating_count ?? 0))));
+  const BUILD_SPEED: Record<string, number> = { weekend: 1, few_days: 0.85, week_or_two: 0.6 };
+  for (const r of rows) {
+    const ideaN = clamp01((r!.idea ?? 0) / 10);
+    const momN = clamp01((r!.momentum ?? 0) / momCap);
+    const openN = r!.sat == null ? 0.5 : clamp01(1 - r!.sat);
+    const buildN = BUILD_SPEED[r!.build ?? ''] ?? 0.4;
+    const tractionN = clamp01(Math.log10(1 + (r!.rating_count ?? 0)) / ratingMax);
+    let s = 0.30 * ideaN + 0.24 * momN + 0.16 * openN + 0.12 * buildN + 0.18 * tractionN;
+    if (r!.flag) s *= 0.6; // unverified / suspect traction → discount
+    r!.play = Math.round(clamp01(s) * 1000) / 10;
+  }
+  rows.sort((a, b) => b!.play - a!.play);
+  rows.forEach((r, i) => { r!.play_rank = i + 1; });
 
   const categories = [...new Set(rows.map((r) => r!.category).filter(Boolean))].sort();
   const geos = [...new Set(rows.flatMap((r) => r!.geos))].sort();
@@ -141,6 +164,13 @@ export async function buildDashboard() {
   }).join('');
 
   const body = `
+<style>
+  tr.approw.play-top td { background: rgba(63,207,142,0.09); }
+  tr.approw.play-top:hover td { background: rgba(63,207,142,0.16); }
+  tr.approw.play-top td:first-child { box-shadow: inset 3px 0 0 0 var(--good); }
+  .playbadge { display:inline-block; min-width:34px; text-align:center; padding:1px 6px; border-radius:99px; font-size:11px; font-weight:700; background:#10301f; color:var(--good); margin-left:6px; }
+  .play-hi { color: var(--good); font-weight:700; }
+</style>
 <details class="panel" style="padding:10px 14px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
@@ -166,12 +196,13 @@ export async function buildDashboard() {
 </div>
 <div class="panel" style="overflow-x:auto">
 <table id="t"><thead><tr>
+  <th data-k="play" class="num">Play ▾</th>
   <th data-k="name">App</th><th data-k="category">Category</th><th>Geos live</th>
-  <th>Rank 14d</th><th data-k="momentum" class="num">Momentum ▾</th>
+  <th>Rank 14d</th><th data-k="momentum" class="num">Momentum</th>
   <th data-k="idea" class="num">Idea</th><th data-k="build">Build</th><th data-k="sat" class="num">Satur.</th>
   <th data-k="rating_count" class="num">Verified ratings</th><th>Fact check</th><th data-k="first_seen">First caught</th>
 </tr></thead><tbody></tbody></table>
-<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} startup apps buildable in ≤2 weeks with AI · click a row for per-geo deltas &amp; analysis · incumbents &amp; slow/too-complex builds removed · read-only</p>
+<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} startup apps buildable in ≤2 weeks with AI · <b class="play-hi">top 100 plays</b> (by combined Play score: idea + momentum + open market + build speed + traction) highlighted green &amp; pinned on top · click a row for per-geo deltas &amp; analysis · incumbents &amp; slow/too-complex builds removed · read-only</p>
 </div>`;
 
   const script = `
@@ -182,7 +213,7 @@ const TC_GEOS = ${embedJson(tcGeos)};
 const TC_CHARTS = ${embedJson(tcCharts)};
 const CHART_LABELS = { top_free: 'Top Free', top_grossing: 'Top Grossing', new_free: 'New Apps', ai_search: 'AI Search' };
 const $ = (s) => document.querySelector(s);
-let sortKey = 'momentum', sortDir = -1;
+let sortKey = 'play', sortDir = -1;
 const fmt = (n) => n == null ? '–' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
 function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
@@ -197,7 +228,8 @@ function render() {
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.map((r, i) => '<tr class="approw" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
+  $('#t tbody').innerHTML = rows.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
+    '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
     '<td>' + escq(r.category||'–') + '</td>' +
@@ -219,7 +251,7 @@ function render() {
     const r = ROWS[+tr.dataset.i];
     const d = document.createElement('tr');
     d.className = 'detail';
-    d.innerHTML = '<td colspan="11" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
+    d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
     tr.after(d);
   });
 }

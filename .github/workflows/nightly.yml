@@ -8,6 +8,8 @@ jobs:
   nightly:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,6 +25,16 @@ jobs:
           PRODUCT_HUNT_TOKEN: ${{ secrets.PRODUCT_HUNT_TOKEN }}
           APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
           INSTANTLY_API_KEY: ${{ secrets.INSTANTLY_API_KEY }}
+      # Push the freshly built public/index.html to Vercel. Runs whenever the
+      # dashboard was produced (even if an upstream source failed) and a
+      # VERCEL_TOKEN secret is present — so it's a safe no-op until you add it.
+      - name: Deploy dashboard to Vercel
+        if: ${{ always() && env.VERCEL_TOKEN != '' && hashFiles('public/index.html') != '' }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: public
+        run: npx vercel@54 deploy --prod --yes --token "$VERCEL_TOKEN"
       - name: upload logs
         if: always()
         uses: actions/upload-artifact@v4
