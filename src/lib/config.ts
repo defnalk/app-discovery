@@ -88,3 +88,45 @@ export const X_KEYWORDS = [
 export const X_WATCHLIST: string[] = [
   // add builder handles here, e.g. 'blakeir', 'levelsio'
 ];
+
+// --- Idea Radar: surface NEW, simple-to-build app ideas from social chatter ---
+// X/Twitter search terms that catch launch + build-in-public posts (the engine
+// looks UPSTREAM of the store charts — apps still being talked about, not yet
+// trending). Used by ingest-x-ideas once APIFY_TOKEN is set.
+export const X_IDEA_KEYWORDS = [
+  'just launched my app',
+  'just shipped my app',
+  'built this app in a weekend',
+  'vibe coded an app',
+  'my new iOS app',
+  'launched on the App Store',
+  'indie app launch',
+  'weekend project app',
+  'shipped a new app',
+];
+
+// LinkedIn post search queries (Apify LinkedIn actor, best-effort + ToS-bound).
+export const LINKEDIN_IDEA_QUERIES = [
+  'excited to launch our app',
+  'just launched our app',
+  'we built an app',
+  'new app store launch',
+  'indie app launch',
+];
+
+// How fast a small team can ship the core: higher = simpler = better play.
+export const BUILD_SPEED: Record<string, number> = {
+  weekend: 1, few_days: 0.85, week_or_two: 0.6, months: 0.25, too_complex: 0,
+};
+
+/**
+ * Idea Radar composite (0-100): groundbreaking × proven demand × build speed.
+ * Single source of truth, shared by analyze-ideas and the dashboard so the
+ * seed file and live pipeline always score identically.
+ */
+export function ideaPlayScore(novelty: number | null, demand: number | null, buildability: string | null): number {
+  const n = Math.max(0, Math.min(10, novelty ?? 0)) / 10;
+  const d = Math.max(0, Math.min(10, demand ?? 0)) / 10;
+  const b = BUILD_SPEED[buildability ?? ''] ?? 0.4;
+  return Math.round((0.4 * n + 0.3 * d + 0.3 * b) * 1000) / 10;
+}

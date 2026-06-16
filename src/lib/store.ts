@@ -97,6 +97,24 @@ export type CompanyRow = {
   enriched_at: string | null;
 };
 
+export type IdeaRow = {
+  dedup_key: string;
+  source: string;                 // x | linkedin | producthunt | hackernews | web
+  source_url: string | null;
+  author: string | null;
+  posted_at: string | null;
+  app_name: string | null;        // null until analyzed
+  concept: string | null;
+  category: string | null;
+  novelty: number | null;         // 0-10
+  buildability: string | null;    // weekend | few_days | week_or_two | months | too_complex
+  demand: number | null;          // 0-10
+  play: number | null;            // 0-100
+  why: string | null;
+  status: string;                 // new | scored
+  captured_at: string;
+};
+
 export interface Store {
   backend: 'supabase' | 'local';
   /** Upsert apps by (store_id, store); preserves first_seen_at, bumps last_seen_at. Returns store_id->id map. */
@@ -119,6 +137,9 @@ export interface Store {
   setFactCheckFlag(appIds: string[]): Promise<void>;
   upsertCompany(row: CompanyRow): Promise<void>;
   listCompanies(): Promise<CompanyRow[]>;
+  /** Idea Radar candidates. Tolerate a missing table (migration 0005 not applied yet). */
+  upsertIdeas(rows: IdeaRow[]): Promise<number>;
+  listIdeas(): Promise<IdeaRow[]>;
   recordRun(source: string, startedAt: string, ok: boolean, detail: Record<string, unknown>): Promise<void>;
   /** Escape hatch: raw Supabase client (null on local backend). Leads jobs use it. */
   raw(): SupabaseClient | null;
@@ -283,6 +304,32 @@ class SupabaseStore implements Store {
     return this.paged<CompanyRow>((from, to) => this.sb.from('app_companies').select('*').order('app_id').range(from, to));
   }
 
+  async upsertIdeas(rows: IdeaRow[]) {
+    if (!rows.length) return 0;
+    try {
+      for (const batch of chunks(rows)) {
+        await this.must(this.sb.from('idea_radar').upsert(batch, { onConflict: 'dedup_key' }));
+      }
+      return rows.length;
+    } catch (err) {
+      if (/idea_radar|does not exist|find the table|schema cache/i.test(String(err))) {
+        log.warn('idea_radar table missing — apply migration 0005_idea_radar.sql to persist ideas');
+        return 0;
+      }
+      throw err;
+    }
+  }
+
+  async listIdeas() {
+    try {
+      return await this.paged<IdeaRow>((from, to) =>
+        this.sb.from('idea_radar').select('*').order('play', { ascending: false, nullsFirst: false }).range(from, to));
+    } catch (err) {
+      if (/idea_radar|does not exist|find the table|schema cache/i.test(String(err))) return [];
+      throw err;
+    }
+  }
+
   async recordRun(source: string, startedAt: string, ok: boolean, detail: Record<string, unknown>) {
     await this.must(this.sb.from('ingest_runs').insert({
       source, started_at: startedAt, finished_at: new Date().toISOString(), ok, detail,
@@ -299,6 +346,7 @@ type LocalData = {
   app_rollups: RollupRow[];
   app_companies: CompanyRow[];
   app_analysis?: AnalysisRow[];
+  idea_radar?: IdeaRow[];
   ingest_runs: unknown[];
   _claimSeq: number;
 };
@@ -434,6 +482,20 @@ class LocalStore implements Store {
   }
 
   async listCompanies() { return this.d.app_companies; }
+
+  async upsertIdeas(rows: IdeaRow[]) {
+    this.d.idea_radar ??= [];
+    const byKey = new Map(this.d.idea_radar.map((i) => [i.dedup_key, i]));
+    for (const r of rows) {
+      const ex = byKey.get(r.dedup_key);
+      if (ex) Object.assign(ex, r);
+      else { this.d.idea_radar.push(r); byKey.set(r.dedup_key, r); }
+    }
+    this.save();
+    return rows.length;
+  }
+
+  async listIdeas() { return this.d.idea_radar ?? []; }
 
   async recordRun(source: string, startedAt: string, ok: boolean, detail: Record<string, unknown>) {
     this.d.ingest_runs.push({ source, started_at: startedAt, finished_at: new Date().toISOString(), ok, detail });

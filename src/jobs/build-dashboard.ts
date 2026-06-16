@@ -3,22 +3,44 @@
  * Read-only. Search + filters (geo, category, first_seen window, momentum
  * threshold, geo_gap only), sortable by momentum, rank sparkline per row.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { log } from '../lib/log.ts';
-import { getStore } from '../lib/store.ts';
+import { getStore, type IdeaRow } from '../lib/store.ts';
+import { ideaPlayScore } from '../lib/config.ts';
 import { pageShell, embedJson, sparkline, esc } from '../lib/html.ts';
 
 const DAY = 86_400_000;
+
+type IdeaCard = IdeaRow & { play: number };
+
+/**
+ * Idea Radar feed: merge the committed seed (research snapshot) with DB ideas from
+ * the live X/LinkedIn pipeline (DB wins per dedup_key), keep only buildable +
+ * scored ones, and rank by the shared composite. Empty seed/table is fine.
+ */
+function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
+  const byKey = new Map<string, IdeaRow>();
+  try {
+    const seed = JSON.parse(readFileSync(path.join(process.cwd(), 'seed', 'idea-radar.json'), 'utf8')) as IdeaRow[];
+    for (const s of seed) byKey.set(s.dedup_key, s);
+  } catch { /* no seed file — fine */ }
+  for (const d of dbIdeas) if (d.status === 'scored') byKey.set(d.dedup_key, d);
+  return [...byKey.values()]
+    .filter((i) => i.app_name && i.buildability !== 'too_complex' && i.buildability !== 'months')
+    .map((i) => ({ ...i, play: ideaPlayScore(i.novelty, i.demand, i.buildability) }))
+    .sort((a, b) => b.play - a.play);
+}
 
 export async function buildDashboard() {
   const store = getStore();
   const startedAt = new Date().toISOString();
   const since = new Date(Date.now() - 14 * DAY).toISOString();
-  const [apps, rollups, snaps, analyses, scores] = await Promise.all([
-    store.listApps(), store.listRollups(), store.listSnapshotsSince(since), store.listAnalyses(), store.listScores(),
+  const [apps, rollups, snaps, analyses, scores, dbIdeas] = await Promise.all([
+    store.listApps(), store.listRollups(), store.listSnapshotsSince(since), store.listAnalyses(), store.listScores(), store.listIdeas(),
   ]);
+  const ideas = loadIdeas(dbIdeas);
   const appById = new Map(apps.map((a) => [a.id, a]));
   const analysisById = new Map(analyses.map((a) => [a.app_id, a]));
   const scoresByApp = new Map<string, typeof scores>();
@@ -146,7 +168,8 @@ export async function buildDashboard() {
     { name: 'Apple App Store', desc: 'charts · scoring · fact-check · dashboard', env: null },
     { name: 'Leads pipeline', desc: 'funnel rollup · suggestions · approval gates', env: null },
     { name: 'App analysis', desc: 'idea · saturation · buildability for new apps', env: 'ANTHROPIC_API_KEY' },
-    { name: 'X / Twitter', desc: 'traction claims → fact-check', env: 'APIFY_TOKEN' },
+    { name: 'X / Twitter', desc: 'traction fact-check + idea radar', env: 'APIFY_TOKEN' },
+    { name: 'LinkedIn', desc: 'build-in-public launches → idea radar', env: 'APIFY_TOKEN' },
     { name: 'Google Play', desc: 'top charts via Apify', env: 'APIFY_TOKEN' },
     { name: 'Product Hunt', desc: 'daily consumer launches → claims', env: 'PRODUCT_HUNT_TOKEN' },
     { name: 'Apollo', desc: 'developer enrichment → leads', env: 'APOLLO_API_KEY', note: 'needs credits topped up' },
@@ -163,6 +186,32 @@ export async function buildDashboard() {
       </div></div>`;
   }).join('');
 
+  // --- Idea Radar panel: server-rendered cards, ranked by composite play ---
+  const buildPill = (b: string | null) =>
+    `<span class="pill${b === 'weekend' || b === 'few_days' ? ' new' : ''}">${esc(b ?? '?')}</span>`;
+  const srcMix = ideas.reduce<Record<string, number>>((m, i) => ((m[i.source] = (m[i.source] ?? 0) + 1), m), {});
+  const ideaCards = ideas.slice(0, 60).map((i, n) => {
+    const top = n < 12;
+    return `<div class="idea${top ? ' idea-top' : ''}">
+      <div class="idea-head"><span class="idea-play${top ? ' play-hi' : ''}">${i.play.toFixed(0)}</span>
+        <b>${esc(i.app_name)}</b><span class="idea-src">${esc(i.source)}</span></div>
+      <div class="dim" style="margin:3px 0 6px;font-size:12px">${esc(i.category ?? '–')} · ${buildPill(i.buildability)} · novelty ${i.novelty ?? '–'}/10 · demand ${i.demand ?? '–'}/10</div>
+      <div>${esc(i.concept ?? '')}</div>
+      <div class="idea-why">▸ ${esc(i.why ?? '')}</div>
+      ${i.source_url ? `<a href="${esc(i.source_url)}" target="_blank" class="idea-link">source ↗</a>` : ''}
+    </div>`;
+  }).join('');
+  const srcSummary = Object.entries(srcMix).map(([s, n]) => `${n} ${esc(s)}`).join(' · ');
+  const ideasPanel = ideas.length ? `
+<div class="panel">
+  <div class="filters" style="margin-bottom:10px;align-items:baseline">
+    <b>💡 Idea Radar</b>
+    <span class="dim">groundbreaking-but-simple app ideas from X · LinkedIn · Product Hunt — ranked by Play score (novelty × demand × build speed) · top 12 in green · ${ideas.length} ideas (${srcSummary})</span>
+  </div>
+  <div class="idea-grid">${ideaCards}</div>
+  <p class="muted-note">Live X + LinkedIn scraping refreshes this nightly once <code>APIFY_TOKEN</code> + <code>ANTHROPIC_API_KEY</code> are set; until then it shows the latest research snapshot.</p>
+</div>` : '';
+
   const body = `
 <style>
   tr.approw.play-top td { background: rgba(63,207,142,0.09); }
@@ -170,12 +219,23 @@ export async function buildDashboard() {
   tr.approw.play-top td:first-child { box-shadow: inset 3px 0 0 0 var(--good); }
   .playbadge { display:inline-block; min-width:34px; text-align:center; padding:1px 6px; border-radius:99px; font-size:11px; font-weight:700; background:#10301f; color:var(--good); margin-left:6px; }
   .play-hi { color: var(--good); font-weight:700; }
+  .idea-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:10px; }
+  .idea { border:1px solid var(--line); border-radius:10px; padding:11px 13px; background:var(--bg); font-size:13px; }
+  .idea-top { border-color:rgba(63,207,142,0.45); background:rgba(63,207,142,0.06); }
+  .idea-head { display:flex; align-items:center; gap:8px; }
+  .idea-head b { font-size:14px; }
+  .idea-play { display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:24px; padding:0 6px; border-radius:6px; background:var(--line); font-weight:700; font-variant-numeric:tabular-nums; }
+  .idea-play.play-hi { background:#10301f; color:var(--good); }
+  .idea-src { margin-left:auto; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); border:1px solid var(--line); border-radius:99px; padding:1px 7px; }
+  .idea-why { color:var(--dim); margin-top:6px; }
+  .idea-link { display:inline-block; margin-top:7px; color:var(--acc); font-size:12px; text-decoration:none; }
 </style>
 <details class="panel" style="padding:10px 14px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
   <p class="muted-note">A source activates the moment its key is added as a GitHub secret — no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
 </details>
+${ideasPanel}
 <div class="panel">
   <div class="filters" style="margin-bottom:10px">
     <b>Top charts</b>

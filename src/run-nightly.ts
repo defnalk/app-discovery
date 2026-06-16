@@ -12,6 +12,9 @@ import { runScoring } from './jobs/score.ts';
 import { runFactCheck } from './jobs/factcheck.ts';
 import { runAnalyze } from './jobs/analyze.ts';
 import { runApolloEnrichment } from './jobs/enrich-apollo.ts';
+import { runXIdeaIngest } from './jobs/ingest-x-ideas.ts';
+import { runLinkedInIngest } from './jobs/ingest-linkedin.ts';
+import { runIdeaAnalysis } from './jobs/analyze-ideas.ts';
 import { buildDashboard } from './jobs/build-dashboard.ts';
 
 type Job = { name: string; run: () => Promise<unknown> };
@@ -25,6 +28,9 @@ const jobs: Job[] = [
   { name: 'factcheck', run: runFactCheck },
   { name: 'analyze', run: runAnalyze },
   { name: 'enrich-apollo', run: runApolloEnrichment },
+  { name: 'ingest-x-ideas', run: runXIdeaIngest },
+  { name: 'ingest-linkedin', run: runLinkedInIngest },
+  { name: 'analyze-ideas', run: runIdeaAnalysis },
   { name: 'build-dashboard', run: buildDashboard },
 ];
 
