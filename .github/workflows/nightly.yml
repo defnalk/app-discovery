@@ -7,7 +7,7 @@ on:
 jobs:
   nightly:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120 # widened: 24 geos x 16 categories x 4 charts of keyless Apple feeds
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
@@ -34,7 +34,11 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         working-directory: public
-        run: npx vercel@54 deploy --prod --yes --token "$VERCEL_TOKEN"
+        # Strip any stray whitespace/newlines from the pasted token (Vercel tokens
+        # are alphanumeric) so a copy-paste artifact can't break the deploy.
+        run: |
+          TOKEN="$(printf '%s' "$VERCEL_TOKEN" | tr -d '[:space:]')"
+          npx vercel@54 deploy --prod --yes --token "$TOKEN"
       - name: upload logs
         if: always()
         uses: actions/upload-artifact@v4
