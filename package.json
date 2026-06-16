@@ -24,7 +24,8 @@
     "leads:rollup": "node -e \"import('./src/leads/jobs.ts').then(m => m.runFunnelRollup())\"",
     "leads:suggest": "node -e \"import('./src/leads/jobs.ts').then(m => m.runSuggestionEngine())\"",
     "leads:seed-demo": "LOCAL_STORE=1 node src/leads/seed-demo.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle:vercel": "esbuild src/vercel-entry.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.0",
     "xlsx": "^0.18.5"
   }
