@@ -22423,6 +22423,31 @@ var init_db = __esm({
         }
         return rows.length;
       }
+      /** Apply enriched contact data (e.g. from Clay) onto existing leads. */
+      async updateLeadContacts(rows) {
+        for (const r of rows) {
+          await this.must(this.sb.from("leads").update({
+            email: r.email,
+            email_status: r.email_status,
+            contact_name: r.contact_name,
+            contact_title: r.contact_title,
+            enriched_at: r.enriched_at,
+            raw_payload: r.raw_payload
+          }).eq("id", r.id));
+        }
+        return rows.length;
+      }
+      async updateLeadFields(rows) {
+        for (const r of rows) {
+          const patch = {};
+          if ("company" in r) patch.company = r.company;
+          if ("category" in r) patch.category = r.category;
+          if ("contact_name" in r) patch.contact_name = r.contact_name;
+          if ("raw_payload" in r) patch.raw_payload = r.raw_payload;
+          if (Object.keys(patch).length) await this.must(this.sb.from("leads").update(patch).eq("id", r.id));
+        }
+        return rows.length;
+      }
       async replaceFunnelRollups(rows) {
         await this.must(this.sb.from("funnel_rollups").delete().neq("stage", ""));
         if (rows.length) await this.must(this.sb.from("funnel_rollups").insert(rows));
@@ -22589,6 +22614,29 @@ var init_db = __esm({
             l.signal_source_url = r.signal_source_url;
             l.raw_payload = r.raw_payload;
           }
+        }
+        this.save();
+        return rows.length;
+      }
+      async updateLeadContacts(rows) {
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        for (const l of this.d.leads) {
+          const r = byId.get(l.id);
+          if (r) Object.assign(l, { email: r.email, email_status: r.email_status, contact_name: r.contact_name, contact_title: r.contact_title, enriched_at: r.enriched_at, raw_payload: r.raw_payload });
+        }
+        this.save();
+        return rows.length;
+      }
+      async updateLeadFields(rows) {
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        for (const l of this.d.leads) {
+          const r = byId.get(l.id);
+          if (!r) continue;
+          const o = l;
+          if ("company" in r) o.company = r.company;
+          if ("category" in r) o.category = r.category;
+          if ("contact_name" in r) o.contact_name = r.contact_name;
+          if ("raw_payload" in r) o.raw_payload = r.raw_payload;
         }
         this.save();
         return rows.length;
@@ -23478,6 +23526,115 @@ async function getTiers() {
   const config = await getLeadsDb().listActiveConfig();
   return config.find((c) => c.key === "tier_thresholds")?.value ?? DEFAULT_TIERS;
 }
+async function rawBody(req) {
+  const pre = req.body;
+  if (pre != null) return typeof pre === "string" ? pre : JSON.stringify(pre);
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  return raw;
+}
+var sendJson = (res, status, obj) => {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(obj));
+};
+var domKey = (s) => (s ?? "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").trim();
+async function clayIngest(req, res) {
+  const db = getLeadsDb();
+  let payload;
+  try {
+    payload = JSON.parse(await rawBody(req) || "{}");
+  } catch {
+    return sendJson(res, 400, { error: "invalid JSON body" });
+  }
+  const records = Array.isArray(payload) ? payload : Array.isArray(payload.records) ? payload.records : [payload];
+  const leads = await db.listLeadsJoined();
+  const byId = new Map(leads.map((l) => [l.id, l]));
+  const byDomain = /* @__PURE__ */ new Map();
+  const byCompany = /* @__PURE__ */ new Map();
+  for (const l of leads) {
+    if (l.domain) byDomain.set(domKey(l.domain), l);
+    if (l.company) byCompany.set(l.company.toLowerCase().trim(), l);
+  }
+  const str = (v) => {
+    const s = v == null ? "" : String(v).trim();
+    return s || null;
+  };
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const updates = [];
+  const inserts = [];
+  for (const r of records) {
+    const domain = domKey(str(r.domain) ?? str(r.website) ?? str(r.company_domain) ?? "");
+    const company = str(r.company) ?? str(r.company_name) ?? str(r.organization_name);
+    const email = str(r.email)?.toLowerCase() ?? null;
+    const phone = str(r.phone) ?? str(r.mobile_phone) ?? str(r.direct_phone) ?? str(r.work_phone);
+    const name = str(r.contact_name) ?? ([str(r.first_name), str(r.last_name)].filter(Boolean).join(" ") || null);
+    const title = str(r.contact_title) ?? str(r.title) ?? str(r.job_title);
+    const linkedin = str(r.linkedin) ?? str(r.linkedin_url);
+    const lid = str(r.lead_id);
+    const match = lid && byId.get(lid) || domain && byDomain.get(domain) || company && byCompany.get(company.toLowerCase());
+    if (match) {
+      const rp = { ...match.raw_payload ?? {}, contact_source: "clay", clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now };
+      updates.push({
+        id: match.id,
+        email: email ?? match.email,
+        email_status: email ? "clay_verified" : match.email_status,
+        contact_name: name ?? match.contact_name,
+        contact_title: title ?? match.contact_title,
+        enriched_at: now,
+        raw_payload: rp
+      });
+    } else if (company || domain) {
+      inserts.push({
+        source_arm: "clay",
+        company,
+        domain: domain || null,
+        email,
+        email_status: email ? "clay_verified" : "needs_lookup",
+        contact_name: name,
+        contact_title: title,
+        category: str(r.category),
+        hq: str(r.hq) ?? str(r.city),
+        geo: str(r.geo),
+        signal_source_url: null,
+        enriched_at: email ? now : null,
+        raw_payload: { contact_source: "clay", clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now }
+      });
+    }
+  }
+  const matched = updates.length ? await db.updateLeadContacts(updates) : 0;
+  const created = inserts.length ? await db.insertLeads(inserts) : 0;
+  log.info(`clay ingest: ${records.length} records -> ${matched} matched/updated, ${created} new`);
+  sendJson(res, 200, { ok: true, received: records.length, matched_updated: matched, new_leads: created });
+}
+async function targetsList(_req, res, url) {
+  const db = getLeadsDb();
+  const geo = url.searchParams.get("geo");
+  const category = url.searchParams.get("category");
+  const limit = Number(url.searchParams.get("limit")) || 0;
+  let apps = (await db.listLeadsJoined()).filter((l) => {
+    const rp = l.raw_payload ?? {};
+    return !rp.icp_type && !rp.duplicate && (l.company || l.domain);
+  });
+  if (geo) apps = apps.filter((l) => (l.geo ?? "").toLowerCase() === geo.toLowerCase());
+  if (category) apps = apps.filter((l) => (l.category ?? "").toLowerCase() === category.toLowerCase());
+  const out = (limit > 0 ? apps.slice(0, limit) : apps).map((l) => {
+    const rp = l.raw_payload ?? {};
+    const sig = rp.signal ?? {};
+    return {
+      lead_id: l.id,
+      company: l.company,
+      domain: l.domain,
+      category: l.category,
+      geo: l.geo,
+      app_name: sig.app_name ?? null,
+      chart_rank: sig.best_rank ?? null,
+      geos_charting: Array.isArray(sig.geos_live) ? sig.geos_live.join(", ") : null,
+      geo_gap: Array.isArray(sig.geo_gap) ? sig.geo_gap.join(", ") : null,
+      store_url: l.signal_source_url
+    };
+  });
+  sendJson(res, 200, { count: out.length, apps: out });
+}
 async function pipelinePage(_req, res, url) {
   const db = getLeadsDb();
   const [leads, funnel, tiers, events] = await Promise.all([
@@ -23967,6 +24124,8 @@ function registerRoutes(routes2) {
   routes2.set("GET /leads/performance", performancePage);
   routes2.set("GET /leads/settings", settingsPage);
   routes2.set("POST /leads/settings/resolve", resolveSuggestionAction);
+  routes2.set("POST /leads/clay", clayIngest);
+  routes2.set("GET /leads/targets", targetsList);
 }
 
 // src/vercel-entry.ts
@@ -23996,9 +24155,23 @@ function passwordOk(req) {
   return decoded.slice(0, sep) === user && decoded.slice(sep + 1) === pass;
 }
 async function handler(req, res) {
-  if (!passwordOk(req)) return unauthorized(res);
   const host = req.headers.host || "localhost";
   const url = new URL(req.url ?? "/", `https://${host}`);
+  if (url.pathname === "/leads/clay" || url.pathname === "/leads/targets") {
+    const token = process.env.CLAY_WEBHOOK_TOKEN;
+    const sent = req.headers["x-clay-token"] || url.searchParams.get("token") || "";
+    if (!token || sent !== token) {
+      res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+      res.end('{"error":"unauthorized"}');
+      return;
+    }
+    const clay = routes.get(`${req.method} ${url.pathname}`);
+    if (clay) {
+      await clay(req, res, url);
+      return;
+    }
+  }
+  if (!passwordOk(req)) return unauthorized(res);
   const route = routes.get(`${req.method} ${url.pathname}`);
   if (!route) {
     res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
