@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getServiceClient, readSession, isAdminName, json } from './_lib.ts';
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   const sess = readSession(req);
   if (!sess || sess.role !== 'admin' || !isAdminName(sess.name)) return json(res, 403, { error: 'admins only' });
   const sb = getServiceClient();

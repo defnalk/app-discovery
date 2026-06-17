@@ -1,12 +1,13 @@
 /** POST /api/claim {subjectType, subjectId, subjectName, category} → atomic, race-safe
  *  reserve via the claim_play RPC. Identity comes from the signed cookie, NOT the body. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getServiceClient, readSession, readJsonBody, json, str, subjType } from './_lib.ts';
+import { getServiceClient, readSession, readJsonBody, json, str, subjType, checkRateLimit } from './_lib.ts';
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   const sess = readSession(req);
   if (!sess) return json(res, 401, { error: 'login required' });
+  if (!checkRateLimit(`${sess.name}:claim`, 60)) return json(res, 429, { error: 'too many requests, slow down' });
 
   const b = await readJsonBody<{ subjectType?: string; subjectId?: string; subjectName?: string; category?: string }>(req);
   const subjectId = str(b.subjectId, 200);
@@ -20,6 +21,6 @@ export default async function handler(req: IncomingMessage & { method?: string }
     p_category: b.category ? str(b.category, 100) : null,
     p_manager: sess.name,
   });
-  if (error) return json(res, 500, { error: error.message });
+  if (error) { console.error('claim_play RPC failed:', error.message); return json(res, 500, { error: 'claim failed' }); }
   return json(res, 200, data); // { won, claim } | { won:false, claimed_by, claim }
 }

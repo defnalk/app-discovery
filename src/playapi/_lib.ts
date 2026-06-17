@@ -10,7 +10,7 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 
 export type Role = 'manager' | 'admin';
 export type Session = { name: string; role: Role; exp: number };
@@ -60,10 +60,22 @@ export function verifyToken(token: string | undefined | null): Session | null {
 }
 
 export function constantTimeEqual(a: string, b: string): boolean {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  if (ba.length !== bb.length) return false;
-  return timingSafeEqual(ba, bb);
+  // Hash both to equal-length digests first, so there's no variable-time length
+  // branch that could leak the passcode length via response timing.
+  const ha = createHash('sha256').update(String(a)).digest();
+  const hb = createHash('sha256').update(String(b)).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+/** Per-key in-memory rate limit (best-effort across warm function instances). */
+const rlHits = new Map<string, number[]>();
+export function checkRateLimit(key: string, maxPerHour: number): boolean {
+  const now = Date.now();
+  const recent = (rlHits.get(key) ?? []).filter((t) => t > now - 3_600_000);
+  if (recent.length >= maxPerHour) return false;
+  recent.push(now);
+  rlHits.set(key, recent);
+  return true;
 }
 
 export function parseCookies(req: IncomingMessage): Record<string, string> {

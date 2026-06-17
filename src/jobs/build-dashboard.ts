@@ -550,19 +550,21 @@ async function doClaim(id, name, cat){
   if (!ME) { openLogin(); return; }
   const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  if (r.ok && r.data && r.data.claim) CLAIMS[id] = r.data.claim;
-  if (r.ok && r.data && r.data.won === false) alert('Already claimed by ' + (r.data.claimed_by||'someone'));
-  refreshAll(); reopenDetail(id);
+  if (!r.ok) { alert((r.data && r.data.error) || 'Claim failed'); await loadState(); refreshAll(); reopenDetail(id); return; }
+  if (r.data && r.data.won === false) alert('Already claimed by ' + (r.data.claimed_by||'someone'));
+  await loadState(); refreshAll(); reopenDetail(id);  // re-sync from authoritative server state
 }
 async function doStart(id){
   const r = await api('/api/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
-  if (r.ok && r.data.started) CLAIMS[id] = r.data.started;
-  refreshAll(); reopenDetail(id);
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) alert((r.data && r.data.error) || 'Start failed');
+  await loadState(); refreshAll(); reopenDetail(id);
 }
 async function doRelease(id){
   const r = await api('/api/release', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
-  if (r.ok) delete CLAIMS[id];
-  refreshAll(); reopenDetail(id);
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) alert((r.data && r.data.error) || 'Release failed');
+  await loadState(); refreshAll(); reopenDetail(id);
 }
 function reopenDetail(id){
   const i = ROWS.findIndex(r => r.id === id);
