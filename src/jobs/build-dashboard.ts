@@ -209,6 +209,15 @@ export async function buildDashboard() {
   <p class="muted-note">Live X + LinkedIn scraping refreshes this nightly once <code>APIFY_TOKEN</code> + <code>ANTHROPIC_API_KEY</code> are set; until then it shows the latest research snapshot.</p>
 </div>` : '';
 
+  // --- Home: highlights only (landing should show the main things, not the firehose) ---
+  const hlCard = (r: NonNullable<typeof rows[number]>, i: number) =>
+    `<button class="hl-card" data-i="${i}"><span class="hl-play">${r.play.toFixed(0)}</span><span class="hl-name">${esc(r.name)}</span><span class="hl-meta">${esc(r.category ?? '–')} · ${esc(r.build ?? '?')}</span></button>`;
+  const topPlays = rows.slice(0, 10).map((r) => ({ r: r!, i: rows.indexOf(r) }));
+  const rising = [...rows].sort((a, b) => b!.momentum - a!.momentum).slice(0, 10).map((r) => ({ r: r!, i: rows.indexOf(r) }));
+  const homeStrip = (title: string, items: { r: NonNullable<typeof rows[number]>; i: number }[]) =>
+    `<div class="panel"><div style="font-weight:600;margin-bottom:10px">${title}</div><div class="hl-grid">${items.map(({ r, i }) => hlCard(r, i)).join('')}</div></div>`;
+  const homeHtml = `${homeStrip('🎯 Top 10 plays to build right now', topPlays)}${homeStrip('🔥 Rising fastest (by momentum)', rising)}<p class="muted-note">Quick view. <b>Top Plays</b> has all ${rows.length} ranked apps with filters &amp; categories; <b>Idea Radar</b> has ${ideas.length} fresh concepts. Click any card for the full breakdown.</p>`;
+
   const body = `
 <style>
   tr.approw.play-top td { background: rgba(63,207,142,0.09); }
@@ -240,6 +249,16 @@ export async function buildDashboard() {
   th[title] { text-decoration:underline dotted var(--line); text-underline-offset:3px; }
   .idea-more { display:none; }
   .idea-grid.show-all .idea-more { display:block; }
+  .cat-chips { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 12px; }
+  .chip { background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:99px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .chip:hover { color:var(--txt); }
+  .chip.active { background:var(--acc); color:#06121f; border-color:var(--acc); }
+  .hl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:10px; }
+  .hl-card { display:flex; align-items:center; gap:10px; text-align:left; width:100%; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; color:var(--txt); font:inherit; }
+  .hl-card:hover { border-color:var(--acc); }
+  .hl-play { display:inline-flex; align-items:center; justify-content:center; min-width:34px; height:30px; border-radius:7px; background:#10301f; color:var(--good); font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
+  .hl-name { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hl-meta { color:var(--dim); font-size:11px; flex:none; }
 </style>
 <div class="hero">
   <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
@@ -251,13 +270,22 @@ export async function buildDashboard() {
   </div>
 </div>
 <div class="tabs">
-  <button class="tabbtn active" data-tab="plays">🎯 Top Plays</button>
+  <button class="tabbtn active" data-tab="home">🏠 Home</button>
+  <button class="tabbtn" data-tab="plays">🎯 Top Plays</button>
   <button class="tabbtn" data-tab="ideas">💡 Idea Radar</button>
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
 </div>
 
-<section class="tabpane active" id="tab-plays">
-  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Click a row for per-geo trends &amp; the AI analysis. Incumbents and slow/too-complex builds are filtered out. Built ${esc(startedAt)}.</p>
+<section class="tabpane active" id="tab-home">
+  ${homeHtml}
+</section>
+
+<section class="tabpane" id="tab-plays">
+  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Pick a category to narrow, then filter by market. Click a row for per-geo trends &amp; the AI analysis.</p>
+  <div class="cat-chips" id="cat-chips">
+    <button class="chip active" data-cat="">All categories</button>
+    ${categories.map((c) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+  </div>
   <div class="panel filters">
     <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
     <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
@@ -436,6 +464,15 @@ function showTab(t) {
 document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 const ideaToggle = $('#idea-toggle');
 if (ideaToggle) ideaToggle.onclick = () => { $('#idea-grid').classList.add('show-all'); ideaToggle.remove(); };
+
+// Category-first chips on the Plays tab
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c));
+  $('#cat').value = c.dataset.cat;
+  render();
+});
+// Home highlight cards open the app in the Plays tab
+document.querySelectorAll('.hl-card').forEach(c => c.onclick = () => openApp(+c.dataset.i));
 
 render();
 renderTopCharts();`;
