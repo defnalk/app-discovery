@@ -3,12 +3,12 @@
  * Read-only. Search + filters (geo, category, first_seen window, momentum
  * threshold, geo_gap only), sortable by momentum, rank sparkline per row.
  */
-import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { log } from '../lib/log.ts';
 import { getStore, type IdeaRow } from '../lib/store.ts';
-import { ideaPlayScore } from '../lib/config.ts';
+import { ideaPlayScore, COUNTRIES, LARGE_MARKETS } from '../lib/config.ts';
 import { pageShell, embedJson, sparkline, esc } from '../lib/html.ts';
 
 const DAY = 86_400_000;
@@ -31,6 +31,33 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
     .filter((i) => i.app_name && i.buildability !== 'too_complex' && i.buildability !== 'months')
     .map((i) => ({ ...i, play: ideaPlayScore(i.novelty, i.demand, i.buildability) }))
     .sort((a, b) => b.play - a.play);
+}
+
+/** Bundle the Play ops serverless functions into public/api/*.mjs (deps inlined, like
+ *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
+async function bundleFunctions() {
+  const dir = path.join(process.cwd(), 'src', 'playapi');
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin'];
+  const esbuild = await import('esbuild');
+  await esbuild.build({
+    entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
+    outdir: path.join(process.cwd(), 'public', 'api'),
+    bundle: true, platform: 'node', format: 'esm', target: 'node20',
+    outExtension: { '.js': '.mjs' }, logLevel: 'error',
+  });
+}
+
+/** Hard gate: never ship a build where a secret value leaked into the public bundle. */
+function assertNoSecretLeak() {
+  const files = [path.join(process.cwd(), 'public', 'index.html')];
+  const apiDir = path.join(process.cwd(), 'public', 'api');
+  try { for (const f of readdirSync(apiDir)) if (f.endsWith('.mjs')) files.push(path.join(apiDir, f)); } catch { /* no api dir */ }
+  const secrets = ['SUPABASE_SERVICE_ROLE_KEY', 'PLAY_TEAM_PASSCODE', 'PLAY_SESSION_SECRET']
+    .map((k) => process.env[k]).filter((v): v is string => !!v && v.length > 12);
+  for (const f of files) {
+    const txt = readFileSync(f, 'utf8');
+    for (const s of secrets) if (txt.includes(s)) throw new Error(`SECURITY: a secret value leaked into ${path.basename(f)} — build aborted`);
+  }
 }
 
 export async function buildDashboard() {
@@ -206,15 +233,8 @@ export async function buildDashboard() {
   <p class="muted-note">Live X + LinkedIn scraping refreshes this nightly once <code>APIFY_TOKEN</code> + <code>ANTHROPIC_API_KEY</code> are set; until then it shows the latest research snapshot.</p>
 </div>` : '';
 
-  // --- Home: highlights only (landing should show the main things, not the firehose) ---
-  const hlCard = (r: NonNullable<typeof rows[number]>, i: number) =>
-    `<button class="hl-card" data-i="${i}"><span class="hl-play">${r.play.toFixed(0)}</span><span class="hl-name">${esc(r.name)}</span><span class="hl-meta">${esc(r.category ?? '–')} · ${esc(r.build ?? '?')}</span></button>`;
-  const topPlays = rows.slice(0, 10).map((r) => ({ r: r!, i: rows.indexOf(r) }));
-  const rising = [...rows].sort((a, b) => b!.momentum - a!.momentum).slice(0, 10).map((r) => ({ r: r!, i: rows.indexOf(r) }));
-  const homeStrip = (title: string, items: { r: NonNullable<typeof rows[number]>; i: number }[]) =>
-    `<div class="panel"><div style="font-weight:600;margin-bottom:10px">${title}</div><div class="hl-grid">${items.map(({ r, i }) => hlCard(r, i)).join('')}</div></div>`;
-  const homeHtml = `${homeStrip('🎯 Top 10 plays to build right now', topPlays)}${homeStrip('🔥 Rising fastest (by momentum)', rising)}<p class="muted-note">Quick view. <b>Top Plays</b> has all ${rows.length} ranked apps with filters &amp; categories; <b>Idea Radar</b> has ${ideas.length} fresh concepts. Click any card for the full breakdown.</p>`;
-
+  // Home is rendered client-side (renderHome) so it can show top-10 AVAILABLE
+  // (unclaimed) plays once the live claim state loads.
   const body = `
 <style>
   tr.approw.play-top td { background: rgba(63,207,142,0.09); }
@@ -256,6 +276,16 @@ export async function buildDashboard() {
   .hl-play { display:inline-flex; align-items:center; justify-content:center; min-width:34px; height:30px; border-radius:7px; background:#10301f; color:var(--good); font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
   .hl-name { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hl-meta { color:var(--dim); font-size:11px; flex:none; }
+  #login-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center; }
+  #login-modal.show { display:flex; }
+  .login-card { max-width:340px; width:90%; }
+  #authbox button { font-size:13px; padding:6px 12px; }
+  .cw { margin-top:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#11161f; }
+  .cw button { font-size:13px; }
+  .claimed-pill { display:inline-block; padding:1px 7px; border-radius:99px; font-size:11px; background:#3b2a14; color:var(--warn); margin-left:4px; }
+  tr.approw.claimed td { opacity:.6; }
+  .cw-timer { color:var(--warn); font-variant-numeric:tabular-nums; }
+  .gap-all summary { cursor:pointer; color:var(--dim); }
 </style>
 <div class="hero">
   <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
@@ -271,10 +301,13 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="plays">🎯 Top Plays</button>
   <button class="tabbtn" data-tab="ideas">💡 Idea Radar</button>
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
+  <button class="tabbtn" data-tab="submit">📝 Submit a play</button>
+  <button class="tabbtn" id="admin-tab" data-tab="admin" style="display:none">🛠 Admin</button>
+  <span id="authbox" style="margin-left:auto;align-self:center"></span>
 </div>
 
 <section class="tabpane active" id="tab-home">
-  ${homeHtml}
+  <div id="home-body" class="dim" style="padding:8px 0">Loading…</div>
 </section>
 
 <section class="tabpane" id="tab-plays">
@@ -320,6 +353,39 @@ export async function buildDashboard() {
   </div>
 </section>
 
+<section class="tabpane" id="tab-submit">
+  <p class="muted-note" style="margin:0 0 10px">Submit a play idea for the team. Admins (Defne &amp; Hussain) review submissions in the Admin tab.</p>
+  <div class="panel" style="max-width:680px">
+    <div id="submit-gate" class="dim">Please <a href="#" id="submit-signin" style="color:var(--acc)">sign in</a> to submit a play idea.</div>
+    <form id="submit-form" style="display:none">
+      <div style="display:grid;gap:10px;max-width:560px">
+        <label>App / play name<br><input id="sf-name" type="text" style="width:100%" maxlength="200" required></label>
+        <label>Category<br><input id="sf-cat" type="text" list="cat-list" style="width:100%" maxlength="100"></label>
+        <label>Target market(s)<br><input id="sf-market" type="text" placeholder="e.g. US, BR, TR" style="width:100%" maxlength="100"></label>
+        <label>Pitch — why is this a good play?<br><textarea id="sf-pitch" rows="4" style="width:100%" maxlength="4000"></textarea></label>
+        <div style="display:flex;gap:10px;align-items:center"><button type="submit">Submit play idea</button><span id="sf-msg" class="dim"></span></div>
+      </div>
+    </form>
+  </div>
+  <datalist id="cat-list">${categories.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+</section>
+
+<section class="tabpane" id="tab-admin">
+  <p class="muted-note" style="margin:0 0 10px">Admin — every manager's claimed plays &amp; submitted ideas. Visible to Defne &amp; Hussain only.</p>
+  <div id="admin-body" class="panel dim">Sign in as an admin to view.</div>
+</section>
+
+<div id="login-modal">
+  <div class="login-card panel">
+    <h3 style="margin:0 0 8px">Sign in</h3>
+    <p class="muted-note" style="margin:0 0 10px">Enter your name and the shared team passcode to claim plays and submit ideas.</p>
+    <input id="login-name" type="text" placeholder="Your name" style="width:100%;margin-bottom:8px" maxlength="60">
+    <input id="login-pass" type="password" placeholder="Team passcode" style="width:100%;margin-bottom:10px">
+    <div style="display:flex;gap:8px"><button id="login-go">Sign in</button><button class="ghost" id="login-cancel">Cancel</button></div>
+    <p id="login-msg" class="dim" style="margin:8px 0 0;min-height:1em"></p>
+  </div>
+</div>
+
 <details class="panel" style="padding:10px 14px;margin-top:18px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
@@ -336,6 +402,10 @@ const CHART_LABELS = { top_free: 'Top Free', top_grossing: 'Top Grossing', new_f
 const $ = (s) => document.querySelector(s);
 let sortKey = 'play', sortDir = -1;
 const fmt = (n) => n == null ? '–' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
+const ALL_GEOS = ${embedJson([...COUNTRIES])};
+const NET_GEOS = ${embedJson(LARGE_MARKETS)};
+let CLAIMS = {};   // subject_id -> claim row (apps), from /api/plays-state
+let ME = null;     // {name, role} UI hint; the HttpOnly cookie is the real gate
 function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
   const seen = $('#seen').value ? Date.now() - (+$('#seen').value)*864e5 : null;
@@ -351,9 +421,9 @@ function render() {
   const CAP = 500;
   const shown = rows.slice(0, CAP);
   $('#count').textContent = rows.length <= CAP ? rows.length + ' shown' : 'showing top ' + CAP + ' of ' + rows.length + ' — narrow by category or search';
-  $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
+  $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + (CLAIMS[r.id] ? ' claimed' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
-    '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
+    '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') + (CLAIMS[r.id] ? ' <span class="claimed-pill">claimed: ' + escq(CLAIMS[r.id].manager_name) + '</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
     '<td>' + escq(r.category||'–') + '</td>' +
     '<td>' + r.geos.map(g => '<span class="pill' + (r.new_geos.includes(g) ? ' new' : '') + '">' + g + '</span>').join('') +
@@ -367,16 +437,20 @@ function render() {
     '<td>' + (r.flag ? '<span class="flag">⚠ suspect</span>' : '<span class="dim">ok</span>') + '</td>' +
     '<td>' + r.first_seen + '</td></tr>').join('');
   document.querySelectorAll('tr.approw').forEach(tr => tr.onclick = (e) => {
-    if (e.target.closest('a')) return;
+    if (e.target.closest('a') || e.target.closest('.claim-btn')) return;
     const open = tr.nextElementSibling?.classList.contains('detail');
     document.querySelectorAll('tr.detail').forEach(d => d.remove());
     if (open) return;
-    const r = ROWS[+tr.dataset.i];
-    const d = document.createElement('tr');
-    d.className = 'detail';
-    d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
-    tr.after(d);
+    openDetailRow(tr);
   });
+}
+function openDetailRow(tr) {
+  const r = ROWS[+tr.dataset.i];
+  const d = document.createElement('tr');
+  d.className = 'detail';
+  d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
+  tr.after(d);
+  wireClaimButtons(d);
 }
 function detailHtml(r) {
   const deltaRows = (r.deltas||[]).map(d => '<tr><td><span class="pill">' + d.geo + '</span></td>' +
@@ -388,7 +462,8 @@ function detailHtml(r) {
         ((d.vel||0) > 0 ? '▲ +' : (d.vel||0) < 0 ? '▼ ' : '') + (d.vel ?? 0) + '</td>') +
     '<td class="num">' + (d.growth ? (d.growth * 100).toFixed(1) + '%' : '–') + '</td></tr>').join('');
   const an = r.idea != null || r.build || r.sat != null;
-  return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+  return claimWidget(r) +
+    '<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:12px">' +
     '<div><h4 style="margin:0 0 6px">Rank deltas (7d) per geo</h4>' +
       '<table style="min-width:320px"><thead><tr><th>Geo</th><th class="num">Rank now</th><th class="num">Rank -7d</th><th class="num">Velocity</th><th class="num">Rating growth</th></tr></thead>' +
       '<tbody>' + (deltaRows || '<tr><td colspan="5" class="dim">no per-geo scores yet</td></tr>') + '</tbody></table></div>' +
@@ -398,7 +473,135 @@ function detailHtml(r) {
         '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'–') + '</b> — ' + escq(r.build_note||'') + '</p>' +
         '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '–') + '</b> — ' + escq(r.sat_note||'') + '</p>'
       ) : '<p class="dim">not analyzed yet — top-momentum apps are analyzed nightly</p>') +
-      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a></p></div></div>';
+      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a></p></div>' +
+    gapsHtml(r) + '</div>';
+}
+// --- Play ops: claim widget, geo gaps, login, claim/start/release, submit, admin ---
+function claimOf(r){ return CLAIMS[r.id] || null; }
+function claimWidget(r){
+  const c = claimOf(r);
+  if (!ME) return '<div class="cw"><span class="dim">Sign in to claim / reserve this play.</span></div>';
+  if (!c) return '<div class="cw"><button class="claim-btn" data-act="claim" data-id="'+escq(r.id)+'" data-name="'+escq(r.name)+'" data-cat="'+escq(r.category||'')+'">▶ Claim / reserve this play</button></div>';
+  const mine = c.manager_name === ME.name;
+  let h = '<div class="cw"><b>Claimed by ' + escq(c.manager_name) + '</b> <span class="dim">· ' + escq(c.status) + '</span>';
+  if (c.status === 'reserved' && c.start_by) h += ' <span class="cw-timer" data-by="' + escq(c.start_by) + '"></span>';
+  if (mine || ME.role === 'admin') {
+    h += '<div style="margin-top:8px;display:flex;gap:8px">';
+    if (mine && c.status === 'reserved') h += '<button class="claim-btn" data-act="start" data-id="'+escq(r.id)+'">✓ Mark started</button>';
+    h += '<button class="ghost claim-btn" data-act="release" data-id="'+escq(r.id)+'">✕ Release</button></div>';
+  }
+  return h + '</div>';
+}
+function gapsHtml(r){
+  const live = new Set(r.geos);
+  const net = NET_GEOS.filter(g => !live.has(g));
+  const all = ALL_GEOS.filter(g => !live.has(g));
+  const pills = (arr) => arr.length ? arr.map(g => '<span class="pill gap">'+g+'</span>').join(' ') : '<span class="dim">none</span>';
+  return '<div style="max-width:420px"><h4 style="margin:0 0 6px">Geo gaps</h4>' +
+    '<p style="margin:4px 0"><span class="dim">Live in:</span> ' + (r.geos.length ? r.geos.map(g=>'<span class="pill">'+g+'</span>').join(' ') : '<span class="dim">—</span>') + '</p>' +
+    '<p style="margin:4px 0"><span class="dim">Gap in our creator-network markets:</span><br>' + pills(net) + '</p>' +
+    '<details class="gap-all" style="margin-top:4px"><summary>Expand all countries (' + all.length + ' gaps)</summary><p style="margin:6px 0">' + pills(all) + '</p></details></div>';
+}
+function wireClaimButtons(scope){
+  scope.querySelectorAll('.claim-btn').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const id = b.dataset.id, act = b.dataset.act;
+    if (act === 'claim') doClaim(id, b.dataset.name||'', b.dataset.cat||'');
+    else if (act === 'start') doStart(id);
+    else if (act === 'release') doRelease(id);
+  });
+  scope.querySelectorAll('.cw-timer').forEach(el => {
+    const ms = new Date(el.dataset.by).getTime() - Date.now();
+    if (ms <= 0) { el.textContent = '· start time elapsed'; return; }
+    const h = Math.floor(ms/3.6e6), m = Math.floor((ms%3.6e6)/6e4);
+    el.textContent = '· start within ' + h + 'h ' + m + 'm';
+  });
+}
+const api = (p, opts) => fetch(p, Object.assign({ credentials: 'include' }, opts||{})).then(async res => ({ ok: res.ok, status: res.status, data: await res.json().catch(()=>({})) }));
+function meHint(){ try { return JSON.parse(localStorage.getItem('play_me')||'null'); } catch { return null; } }
+function setMe(m){ ME = m; if (m) localStorage.setItem('play_me', JSON.stringify(m)); else localStorage.removeItem('play_me'); renderAuth(); }
+function renderAuth(){
+  const box = $('#authbox'); if (!box) return;
+  box.innerHTML = ME ? '<span class="dim" style="margin-right:8px">'+escq(ME.name)+(ME.role==='admin'?' · admin':'')+'</span><button class="ghost" id="signout">Sign out</button>' : '<button id="signin">Sign in</button>';
+  const so = $('#signout'); if (so) so.onclick = () => { setMe(null); CLAIMS = {}; refreshAll(); };
+  const si = $('#signin'); if (si) si.onclick = openLogin;
+  const at = $('#admin-tab'); if (at) at.style.display = (ME && ME.role==='admin') ? '' : 'none';
+}
+function openLogin(){ $('#login-msg').textContent=''; $('#login-modal').classList.add('show'); $('#login-name').focus(); }
+function closeLogin(){ $('#login-modal').classList.remove('show'); }
+async function doLogin(){
+  const name = $('#login-name').value.trim(), passcode = $('#login-pass').value;
+  if (!name) { $('#login-msg').textContent = 'Enter your name.'; return; }
+  $('#login-msg').textContent = 'Signing in…';
+  const r = await api('/api/login', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, passcode }) });
+  if (!r.ok) { $('#login-msg').textContent = r.data.error || 'Sign in failed.'; return; }
+  setMe({ name: r.data.name, role: r.data.role });
+  $('#login-pass').value=''; closeLogin();
+  await loadState(); refreshAll();
+}
+async function loadState(){
+  if (!meHint()) { CLAIMS = {}; return; }
+  const r = await api('/api/plays-state');
+  if (r.status === 401) { setMe(null); CLAIMS = {}; return; }
+  if (r.ok) { CLAIMS = {}; (r.data.claims||[]).forEach(c => { if (c.subject_type === 'app') CLAIMS[c.subject_id] = c; }); if (r.data.me) setMe(r.data.me); }
+}
+function refreshAll(){ renderHome(); render(); renderSubmitGate(); if (ME && ME.role==='admin') renderAdmin(); }
+async function doClaim(id, name, cat){
+  if (!ME) { openLogin(); return; }
+  const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (r.ok && r.data && r.data.claim) CLAIMS[id] = r.data.claim;
+  if (r.ok && r.data && r.data.won === false) alert('Already claimed by ' + (r.data.claimed_by||'someone'));
+  refreshAll(); reopenDetail(id);
+}
+async function doStart(id){
+  const r = await api('/api/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
+  if (r.ok && r.data.started) CLAIMS[id] = r.data.started;
+  refreshAll(); reopenDetail(id);
+}
+async function doRelease(id){
+  const r = await api('/api/release', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
+  if (r.ok) delete CLAIMS[id];
+  refreshAll(); reopenDetail(id);
+}
+function reopenDetail(id){
+  const i = ROWS.findIndex(r => r.id === id);
+  document.querySelectorAll('tr.detail').forEach(d => d.remove());
+  if (i < 0) return;
+  const tr = document.querySelector('tr.approw[data-i="' + i + '"]');
+  if (tr) openDetailRow(tr);
+}
+function hlCardJS(r){ return '<button class="hl-card" data-id="'+escq(r.id)+'"><span class="hl-play">'+(r.play!=null?r.play.toFixed(0):'–')+'</span><span class="hl-name">'+escq(r.name)+'</span><span class="hl-meta">'+escq(r.category||'–')+' · '+escq(r.build||'?')+'</span></button>'; }
+function renderHome(){
+  const body = $('#home-body'); if (!body) return;
+  const free = ROWS.filter(r => !CLAIMS[r.id]);
+  const top = free.filter(r => !r.incumbent).slice(0, 10); // ROWS already play-sorted
+  const rising = [...free].sort((a,b)=> b.momentum - a.momentum).slice(0, 10);
+  const strip = (title, arr) => '<div class="panel"><div style="font-weight:600;margin-bottom:10px">'+title+'</div><div class="hl-grid">'+(arr.length?arr.map(hlCardJS).join(''):'<span class="dim">none available</span>')+'</div></div>';
+  body.classList.remove('dim');
+  body.innerHTML = strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
+    '<p class="muted-note">' + (ME ? 'Showing plays not yet claimed. ' : 'Sign in to claim plays. ') + '<b>Top Plays</b> has all '+ROWS.length+' apps with filters &amp; categories; <b>Idea Radar</b> has fresh concepts.</p>';
+  body.querySelectorAll('.hl-card').forEach(c => c.onclick = () => { const i = ROWS.findIndex(r=>r.id===c.dataset.id); if (i>=0) openApp(i); });
+}
+function renderSubmitGate(){
+  const gate = $('#submit-gate'), form = $('#submit-form'); if (!gate||!form) return;
+  gate.style.display = ME ? 'none' : ''; form.style.display = ME ? '' : 'none';
+}
+async function renderAdmin(){
+  const el = $('#admin-body'); if (!el) return;
+  if (!ME || ME.role !== 'admin') { el.className='panel dim'; el.textContent='Sign in as an admin to view.'; return; }
+  el.className='panel'; el.textContent='Loading…';
+  const r = await api('/api/admin');
+  if (!r.ok) { el.textContent = r.data.error || 'Failed to load.'; return; }
+  const claims = r.data.claims||[], subs = r.data.submissions||[], mgrs = r.data.managers||[];
+  const byMgr = {}; claims.forEach(c => { (byMgr[c.manager_name] = byMgr[c.manager_name]||[]).push(c); });
+  let h = '<h4 style="margin:0 0 8px">Managers ('+mgrs.length+')</h4>';
+  h += mgrs.map(m => { const cs = byMgr[m.name]||[]; return '<div style="margin-bottom:10px"><b>'+escq(m.name)+'</b>'+(m.role==='admin'?' <span class="pill">admin</span>':'')+' <span class="dim">— '+cs.length+' claim(s)</span>'+(cs.length?'<br>'+cs.map(c=>'<span class="pill">'+escq(c.subject_name||c.subject_id)+' · '+escq(c.status)+'</span>').join(' '):'')+'</div>'; }).join('') || '<span class="dim">none</span>';
+  h += '<h4 style="margin:14px 0 8px">Submitted ideas ('+subs.length+')</h4>';
+  h += subs.length ? '<div style="overflow-x:auto"><table><thead><tr><th>By</th><th>App</th><th>Category</th><th>Market</th><th>Pitch</th><th>When</th></tr></thead><tbody>' +
+    subs.map(s=>'<tr><td>'+escq(s.manager_name)+'</td><td>'+escq(s.app_name)+'</td><td>'+escq(s.category||'–')+'</td><td>'+escq(s.market||'–')+'</td><td style="max-width:340px">'+escq(s.pitch||'')+'</td><td class="dim">'+escq((s.submitted_at||'').slice(0,10))+'</td></tr>').join('') + '</tbody></table></div>'
+    : '<span class="dim">No submissions yet.</span>';
+  el.innerHTML = h;
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
@@ -459,6 +662,9 @@ document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
 function showTab(t) {
   document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
+  if (t === 'admin') renderAdmin();
+  if (t === 'submit') renderSubmitGate();
+  if (('#/' + t) !== location.hash) location.hash = '#/' + t;
 }
 document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 const ideaToggle = $('#idea-toggle');
@@ -470,16 +676,41 @@ document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
   $('#cat').value = c.dataset.cat;
   render();
 });
-// Home highlight cards open the app in the Plays tab
-document.querySelectorAll('.hl-card').forEach(c => c.onclick = () => openApp(+c.dataset.i));
 
+// Auth + submit wiring
+$('#login-go').onclick = doLogin;
+$('#login-cancel').onclick = closeLogin;
+$('#login-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+const ssi = $('#submit-signin'); if (ssi) ssi.onclick = (e) => { e.preventDefault(); openLogin(); };
+const sform = $('#submit-form');
+if (sform) sform.onsubmit = async (e) => {
+  e.preventDefault();
+  if (!ME) { openLogin(); return; }
+  $('#sf-msg').textContent = 'Submitting…';
+  const r = await api('/api/submit', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ appName: $('#sf-name').value, category: $('#sf-cat').value, market: $('#sf-market').value, pitch: $('#sf-pitch').value, details: {} }) });
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  $('#sf-msg').textContent = r.ok ? '✓ Submitted, thank you!' : (r.data.error || 'Failed');
+  if (r.ok) { ['sf-name','sf-cat','sf-market','sf-pitch'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
+};
+
+// Shareable hash routing (#/plays, #/category etc.)
+function routeFromHash(){ const t = (location.hash||'').replace('#/','') || 'home'; if (document.getElementById('tab-'+t)) showTab(t); }
+window.addEventListener('hashchange', routeFromHash);
+
+ME = meHint();
+renderAuth();
+renderHome();
 render();
-renderTopCharts();`;
+renderTopCharts();
+routeFromHash();
+loadState().then(refreshAll);`;
 
   const html = pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body, script });
   const out = path.join(process.cwd(), 'public', 'index.html');
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, html);
+  await bundleFunctions();   // public/api/*.mjs (claim/login/admin endpoints)
+  assertNoSecretLeak();      // abort if any secret value made it into the deployed bundle
   await store.recordRun('dashboard', startedAt, true, { rows: rows.length });
   log.info(`dashboard: ${rows.length} rows -> public/index.html`);
   const published = await publishDashboard(html);

@@ -3,6 +3,7 @@ node_modules/
 data/
 logs/
 public/index.html
+public/api/
 leads_out/
 *.log
 .DS_Store
