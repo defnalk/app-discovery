@@ -50,6 +50,12 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
   ]);
   const totals = new Map(funnel.filter((f) => f.source_arm === '*' && f.geo === '*').map((f) => [f.stage, f.count]));
   const msg = url.searchParams.get('msg');
+  // Default to consumer apps only; off-ICP leads (incumbents / D2C brands / B2B) are
+  // tagged raw_payload.icp_type and hidden unless ?icp=all.
+  const icpView = url.searchParams.get('icp') === 'all' ? 'all' : 'consumer';
+  const isOffIcp = (l: LeadJoined) => Boolean((l.raw_payload as Record<string, unknown> | null)?.icp_type);
+  const offIcpCount = leads.filter(isOffIcp).length;
+  const shown = icpView === 'all' ? leads : leads.filter((l) => !isOffIcp(l));
 
   // delta-CRM: per-lead event timeline (latest 12)
   const eventsByLead = new Map<string, { type: string; at: string }[]>();
@@ -58,20 +64,32 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     (eventsByLead.get(e.lead_id) ?? eventsByLead.set(e.lead_id, []).get(e.lead_id)!).push({ type: e.type, at: e.occurred_at });
   }
 
-  const arms = [...new Set(leads.map((l) => l.source_arm))].sort();
-  const geos = [...new Set(leads.map((l) => l.geo ?? 'unknown'))].sort();
-  const rows = leads.map((l) => ({
-    ...l,
-    tier: tierOf(l.jaka_score, tiers),
-    created: fmtDate(l.created_at),
-    enriched: fmtDate(l.enriched_at),
-    events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
-  }));
+  const arms = [...new Set(shown.map((l) => l.source_arm))].sort();
+  const geos = [...new Set(shown.map((l) => l.geo ?? 'unknown'))].sort();
+  const rows = shown.map((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    const sig = (rp.signal as Record<string, unknown> | undefined) ?? undefined;
+    return {
+      ...l,
+      tier: tierOf(l.jaka_score, tiers),
+      created: fmtDate(l.created_at),
+      // Real provenance only: the source list/file it came from, and a verified-traction
+      // timestamp when the engine actually matched it to a live app (not the old import-time
+      // "enriched" stamp, which asserted an enrichment that never happened).
+      list: (rp.list as string | undefined) ?? null,
+      verifiedAt: (rp.signal_verified && sig?.verified_at) ? fmtDate(sig.verified_at as string) : null,
+      events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12),
+    };
+  });
 
   const body = `
 ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` : ''}
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join('')}
+</div>
+<div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <span><b>${shown.length}</b> ${icpView === 'all' ? 'leads · all types' : 'consumer apps'}${icpView === 'consumer' && offIcpCount ? ` <span class="dim">· ${offIcpCount} non-app (incumbent / D2C / B2B) hidden</span>` : ''}</span>
+  ${icpView === 'consumer' ? '<a href="?icp=all" style="color:var(--acc)">show all types</a>' : '<a href="?icp=consumer" style="color:var(--acc)">← consumer apps only</a>'}
 </div>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search company / domain…" style="min-width:200px">
@@ -124,8 +142,8 @@ function render() {
     '<td style="max-width:260px">' + escq((r.reason||'–').slice(0, 120)) + '</td>' +
     '<td>' + (STAGE_LABELS[r.stage] || escq(r.stage||'raw')) + '</td>' +
     '<td><span class="dim">src:</span> ' + escq(r.source_arm) +
-      (r.signal_source_url ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
-      '<br><span class="dim">enriched ' + r.enriched + '</span></td></tr>').join('');
+      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
+      '<br><span class="dim">' + (r.list ? 'list: ' + escq(r.list) : 'added ' + r.created) + (r.verifiedAt ? ' · ✓ verified' : '') + '</span></td></tr>').join('');
   if (rows.length > 500) $('#count').textContent += ' (first 500 rendered)';
   document.querySelectorAll('tr.leadrow').forEach(tr => tr.onclick = (e) => {
     if (e.target.closest('a')) return;
@@ -142,11 +160,13 @@ function render() {
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
-    p.expansion_signal ? '<p style="margin:4px 0"><b>Expansion signal:</b> ' + escq(p.expansion_signal) + '</p>' : '',
+    p.expansion_signal ? '<p style="margin:4px 0">' + (p.signal_verified
+      ? '<span style="background:var(--acc);color:#000;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600">✓ LIVE TRACTION</span> '
+      : '<span class="pill" title="not verified against live store data">unverified</span> ') + '<b>Signal:</b> ' + escq(p.expansion_signal) + '</p>' : '',
     p.hiring_signal ? '<p style="margin:4px 0"><b>Hiring signal:</b> ' + escq(p.hiring_signal) + '</p>' : '',
     p.why_selected ? '<p style="margin:4px 0"><b>Why selected:</b> ' + escq(p.why_selected) + '</p>' : '',
-    p.band ? '<p style="margin:4px 0"><b>Apollo band:</b> ' + escq(p.band) + ' (rank ' + escq(String(p.rank ?? '–')) + ', ' + escq(String(p.confidence || '')) + ')</p>' : '',
-    p.momentum_score != null ? '<p style="margin:4px 0"><b>App momentum:</b> ' + p.momentum_score + ' · live in ' + escq((p.geos_live||[]).join(', ')) + '</p>' : '',
+    p.band ? '<p style="margin:4px 0"><b>ICP fit (heuristic):</b> ' + escq(String(p.band).split(': ').pop()) + (p.confidence ? ' <span class="dim">· confidence ' + escq(String(p.confidence)) + '</span>' : '') + '</p>' : '',
+    (p.signal_verified && p.signal && p.signal.momentum_score != null) ? '<p style="margin:4px 0"><b>App momentum:</b> ' + p.signal.momentum_score + ' <span class="dim">(live App Store data, rank #' + escq(String(p.signal.best_rank ?? '–')) + ')</span></p>' : '',
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
@@ -156,8 +176,10 @@ function leadDetail(r) {
       '<p style="margin:8px 0 4px"><b>Classifier reason:</b> ' + escq(r.reason || 'unclassified') + '</p>' +
       '<p class="dim" style="margin:4px 0">market: ' + escq(r.market_status||'–') + ' · fit: ' + escq(r.fit_verdict||'–') +
       ' · hq: ' + escq(r.hq||'–') + '</p>' +
-      '<p class="dim" style="margin:4px 0">provenance: ' + escq(r.source_arm) + ' · added ' + r.created + ' · enriched ' + r.enriched +
-      (r.signal_source_url ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">source ↗</a>' : '') + '</p></div>' +
+      '<p class="dim" style="margin:4px 0">provenance: ' + escq(r.source_arm) +
+      (r.list ? ' · from <b>' + escq(r.list) + '</b>' : '') + ' · added ' + r.created +
+      (r.verifiedAt ? ' · <span style="color:var(--acc)">✓ live traction verified ' + escq(r.verifiedAt) + '</span>' : '') +
+      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">source ↗</a>' : '') + '</p></div>' +
     '<div><h4 style="margin:0 0 6px">Activity (delta)</h4>' +
       '<table style="min-width:220px"><thead><tr><th>Date</th><th>Event</th></tr></thead><tbody>' +
       (timeline || '<tr><td colspan="2" class="dim">no events yet — instantly_sync runs nightly</td></tr>') +
@@ -360,7 +382,7 @@ async function performancePage(_req: IncomingMessage, res: ServerResponse) {
       return `<tr><td>${fmtDate(e.occurred_at)}</td><td><b>${esc(l.company ?? '–')}</b> <span class="dim">${esc(l.domain ?? '')}</span></td>
         <td><span class="pill">${esc(l.source_arm)}</span></td><td class="num">${l.jaka_score ?? '–'} (${tierOf(l.jaka_score, tiers)})</td>
         <td>${e.type === 'positive_reply' ? '<span style="color:var(--good)">positive</span>' : 'reply'}</td>
-        <td>${l.signal_source_url ? `<a href="${esc(l.signal_source_url)}" style="color:var(--acc)">signal</a>` : '<span class="dim">–</span>'}</td></tr>`;
+        <td>${l.signal_source_url && l.signal_source_url.startsWith('http') ? `<a href="${esc(l.signal_source_url)}" style="color:var(--acc)">signal</a>` : '<span class="dim">–</span>'}</td></tr>`;
     }).join('');
 
   const body = `

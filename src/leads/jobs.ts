@@ -9,6 +9,8 @@
 import { log } from '../lib/log.ts';
 import { getLeadsDb, type EventRow, type LeadJoined } from './db.ts';
 import { instantlyEnabled, listEmails, campaignAnalytics } from './instantly.ts';
+import { runSignalRefresh } from './signals.ts';
+import { runCull } from './cull-non-apps.ts';
 
 const DAY = 86_400_000;
 
@@ -177,6 +179,8 @@ export async function runStrategyRollup() {
 /** Bolted onto the nightly orchestrator; same failure-isolation rules. */
 export const nightlyJobs = [
   { name: 'instantly_sync', run: runInstantlySync },
+  { name: 'signal_refresh', run: runSignalRefresh }, // stitch real app-traction onto leads
+  { name: 'tag_icp', run: runCull }, // tag incumbents/D2C/B2B off-ICP so the book stays consumer-apps
   { name: 'funnel_rollup', run: runFunnelRollup },
   { name: 'suggestion_engine', run: runSuggestionEngine },
   { name: 'strategy_rollup', run: runStrategyRollup },

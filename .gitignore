@@ -6,3 +6,4 @@ public/index.html
 leads_out/
 *.log
 .DS_Store
+.vercel

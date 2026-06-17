@@ -33,6 +33,7 @@ type LookupResult = {
 const RSS_CHARTS: { chartType: string; feed: string }[] = [
   { chartType: 'top_free', feed: 'topfreeapplications' },
   { chartType: 'top_grossing', feed: 'topgrossingapplications' },
+  { chartType: 'top_paid', feed: 'toppaidapplications' }, // paid-app developers — strong ICP, can afford UA
   { chartType: 'new_free', feed: 'newfreeapplications' }, // catches apps before they hit top charts
 ];
 

@@ -1,10 +1,19 @@
-export const COUNTRIES = ['us', 'gb', 'br', 'tr', 'in', 'id', 'mx', 'de', 'fr'] as const;
+// Apple App Store storefronts. Keyless (iTunes RSS), so geo breadth is free.
+// Mature markets (buying power) + emerging/creator-cheap markets (8x geo-arbitrage thesis).
+export const COUNTRIES = [
+  // original 9
+  'us', 'gb', 'br', 'tr', 'in', 'id', 'mx', 'de', 'fr',
+  // mature additions
+  'ca', 'au', 'jp', 'kr', 'es', 'it', 'nl', 'se', 'pl',
+  // emerging / creator-cheap markets to arbitrage into
+  'sa', 'ae', 'ng', 'vn', 'th', 'ph', 'ar', 'co',
+] as const;
 export type Geo = (typeof COUNTRIES)[number];
 
-// Large markets the geo-arbitrage view checks for absence in.
-export const LARGE_MARKETS: Geo[] = ['in', 'br', 'tr', 'id', 'mx'];
+// Large markets the geo-arbitrage view checks for absence in (cheap UA to land).
+export const LARGE_MARKETS: Geo[] = ['in', 'br', 'tr', 'id', 'mx', 'ng', 'ph', 'vn'];
 
-// Apple genre ids. null = all categories.
+// Apple genre ids. null = all categories. Keyless, so category breadth is free.
 export const APPLE_CATEGORIES: { key: string; genreId: number | null }[] = [
   { key: 'all', genreId: null },
   { key: 'productivity', genreId: 6007 },
@@ -14,10 +23,21 @@ export const APPLE_CATEGORIES: { key: string; genreId: number | null }[] = [
   { key: 'education', genreId: 6017 },
   { key: 'utilities', genreId: 6002 },       // AI tools cluster here
   { key: 'graphics-design', genreId: 6027 }, // and here
+  { key: 'social-networking', genreId: 6005 },
+  { key: 'health-fitness', genreId: 6013 },
+  { key: 'entertainment', genreId: 6016 },
+  { key: 'travel', genreId: 6003 },
+  { key: 'food-drink', genreId: 6023 },
+  { key: 'shopping', genreId: 6024 },
+  { key: 'music', genreId: 6011 },
+  { key: 'business', genreId: 6000 },
 ];
 
-// iTunes Search terms for surfacing new AI apps before they chart.
-export const AI_SEARCH_TERMS = ['AI', 'AI assistant', 'AI photo', 'AI video', 'AI chat'];
+// iTunes Search terms for surfacing new apps before they chart (not just AI).
+export const AI_SEARCH_TERMS = [
+  'AI', 'AI assistant', 'AI photo', 'AI video', 'AI chat', 'AI agent', 'AI image',
+  'photo editor', 'habit tracker', 'language learning',
+];
 // Only keep search hits released within this window ("new" apps).
 export const AI_SEARCH_MAX_AGE_DAYS = 270;
 

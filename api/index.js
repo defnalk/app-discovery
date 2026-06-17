@@ -509,13 +509,13 @@ function __disposeResources(env) {
   }
   return next();
 }
-function __rewriteRelativeImportExtension(path3, preserveJsx) {
-  if (typeof path3 === "string" && /^\.\.?\//.test(path3)) {
-    return path3.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
+function __rewriteRelativeImportExtension(path4, preserveJsx) {
+  if (typeof path4 === "string" && /^\.\.?\//.test(path4)) {
+    return path4.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function(m, tsx, d, ext, cm) {
       return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : d + ext + "." + cm.toLowerCase() + "js";
     });
   }
-  return path3;
+  return path4;
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm({
@@ -10173,8 +10173,8 @@ var require_main2 = __commonJS({
 });
 
 // node_modules/iceberg-js/dist/index.mjs
-function buildUrl(baseUrl, path3, query) {
-  const url = new URL(path3, baseUrl);
+function buildUrl(baseUrl, path4, query) {
+  const url = new URL(path4, baseUrl);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== void 0) {
@@ -10204,12 +10204,12 @@ function createFetchClient(options) {
   return {
     async request({
       method,
-      path: path3,
+      path: path4,
       query,
       body,
       headers: headers2
     }) {
-      const url = buildUrl(options.baseUrl, path3, query);
+      const url = buildUrl(options.baseUrl, path4, query);
       const authHeaders = await buildAuthHeaders(options.auth);
       const res = await fetchFn(url, {
         method,
@@ -11107,7 +11107,7 @@ var init_dist3 = __esm({
       * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
       * @param fileBody The body of the file to be stored in the bucket.
       */
-      async uploadOrUpdate(method, path3, fileBody, fileOptions) {
+      async uploadOrUpdate(method, path4, fileBody, fileOptions) {
         var _this = this;
         return _this.handleOperation(async () => {
           let body;
@@ -11131,7 +11131,7 @@ var init_dist3 = __esm({
             if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options.duplex) options.duplex = "half";
           }
           if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value] of Object.entries(fileOptions.headers)) headers2 = setHeader(headers2, key, value);
-          const cleanPath = _this._removeEmptyFolders(path3);
+          const cleanPath = _this._removeEmptyFolders(path4);
           const _path = _this._getFinalPath(cleanPath);
           const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers: headers2 }, (options === null || options === void 0 ? void 0 : options.duplex) ? { duplex: options.duplex } : {}));
           return {
@@ -11208,8 +11208,8 @@ var init_dist3 = __esm({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async upload(path3, fileBody, fileOptions) {
-        return this.uploadOrUpdate("POST", path3, fileBody, fileOptions);
+      async upload(path4, fileBody, fileOptions) {
+        return this.uploadOrUpdate("POST", path4, fileBody, fileOptions);
       }
       /**
       * Upload a file with a token generated from `createSignedUploadUrl`.
@@ -11249,9 +11249,9 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async uploadToSignedUrl(path3, token, fileBody, fileOptions) {
+      async uploadToSignedUrl(path4, token, fileBody, fileOptions) {
         var _this3 = this;
-        const cleanPath = _this3._removeEmptyFolders(path3);
+        const cleanPath = _this3._removeEmptyFolders(path4);
         const _path = _this3._getFinalPath(cleanPath);
         const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
         url.searchParams.set("token", token);
@@ -11320,10 +11320,10 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: `insert`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUploadUrl(path3, options) {
+      async createSignedUploadUrl(path4, options) {
         var _this4 = this;
         return _this4.handleOperation(async () => {
-          let _path = _this4._getFinalPath(path3);
+          let _path = _this4._getFinalPath(path4);
           const headers2 = _objectSpread22({}, _this4.headers);
           if (options === null || options === void 0 ? void 0 : options.upsert) headers2["x-upsert"] = "true";
           const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers: headers2 });
@@ -11332,7 +11332,7 @@ var init_dist3 = __esm({
           if (!token) throw new StorageError("No token returned by API");
           return {
             signedUrl: url.toString(),
-            path: path3,
+            path: path4,
             token
           };
         });
@@ -11392,8 +11392,8 @@ var init_dist3 = __esm({
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
       */
-      async update(path3, fileBody, fileOptions) {
-        return this.uploadOrUpdate("PUT", path3, fileBody, fileOptions);
+      async update(path4, fileBody, fileOptions) {
+        return this.uploadOrUpdate("PUT", path4, fileBody, fileOptions);
       }
       /**
       * Moves an existing file to a new path in the same bucket.
@@ -11544,10 +11544,10 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async createSignedUrl(path3, expiresIn, options) {
+      async createSignedUrl(path4, expiresIn, options) {
         var _this8 = this;
         return _this8.handleOperation(async () => {
-          let _path = _this8._getFinalPath(path3);
+          let _path = _this8._getFinalPath(path4);
           const hasTransform = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0;
           let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options.transform } : {}), { headers: _this8.headers });
           const query = new URLSearchParams();
@@ -11683,13 +11683,13 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      download(path3, options, parameters) {
+      download(path4, options, parameters) {
         const renderPath = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0 ? "render/image/authenticated" : "object";
         const query = new URLSearchParams();
         if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
         if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
         const queryString = query.toString();
-        const _path = this._getFinalPath(path3);
+        const _path = this._getFinalPath(path4);
         const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
           headers: this.headers,
           noResolveJson: true
@@ -11720,9 +11720,9 @@ var init_dist3 = __esm({
       * }
       * ```
       */
-      async info(path3) {
+      async info(path4) {
         var _this10 = this;
-        const _path = _this10._getFinalPath(path3);
+        const _path = _this10._getFinalPath(path4);
         return _this10.handleOperation(async () => {
           return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
         });
@@ -11743,9 +11743,9 @@ var init_dist3 = __esm({
       *   .exists('folder/avatar1.png')
       * ```
       */
-      async exists(path3) {
+      async exists(path4) {
         var _this11 = this;
-        const _path = _this11._getFinalPath(path3);
+        const _path = _this11._getFinalPath(path4);
         try {
           await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
           return {
@@ -11824,8 +11824,8 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: none
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      getPublicUrl(path3, options) {
-        const _path = this._getFinalPath(path3);
+      getPublicUrl(path4, options) {
+        const _path = this._getFinalPath(path4);
         const query = new URLSearchParams();
         if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
         if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
@@ -11964,10 +11964,10 @@ var init_dist3 = __esm({
       *   - `objects` table permissions: `select`
       * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
       */
-      async list(path3, options, parameters) {
+      async list(path4, options, parameters) {
         var _this13 = this;
         return _this13.handleOperation(async () => {
-          const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options), {}, { prefix: path3 || "" });
+          const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options), {}, { prefix: path4 || "" });
           return await post(_this13.fetch, `${_this13.url}/object/list/${_this13.bucketId}`, body, { headers: _this13.headers }, parameters);
         });
       }
@@ -12032,11 +12032,11 @@ var init_dist3 = __esm({
         if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
         return btoa(data);
       }
-      _getFinalPath(path3) {
-        return `${this.bucketId}/${path3.replace(/^\/+/, "")}`;
+      _getFinalPath(path4) {
+        return `${this.bucketId}/${path4.replace(/^\/+/, "")}`;
       }
-      _removeEmptyFolders(path3) {
-        return path3.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
+      _removeEmptyFolders(path4) {
+        return path4.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
       }
       /** Modifies the `query`, appending values the from `transform` */
       applyTransformOptsToQuery(query, transform) {
@@ -22416,6 +22416,13 @@ var init_db = __esm({
           }
         }
       }
+      /** Overwrite a lead's signal_source_url + raw_payload (used to attach verified app-traction signals). */
+      async updateLeadSignals(rows) {
+        for (const r of rows) {
+          await this.must(this.sb.from("leads").update({ signal_source_url: r.signal_source_url, raw_payload: r.raw_payload }).eq("id", r.id));
+        }
+        return rows.length;
+      }
       async replaceFunnelRollups(rows) {
         await this.must(this.sb.from("funnel_rollups").delete().neq("stage", ""));
         if (rows.length) await this.must(this.sb.from("funnel_rollups").insert(rows));
@@ -22573,6 +22580,18 @@ var init_db = __esm({
           if (s) l.stage = s;
         }
         this.save();
+      }
+      async updateLeadSignals(rows) {
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        for (const l of this.d.leads) {
+          const r = byId.get(l.id);
+          if (r) {
+            l.signal_source_url = r.signal_source_url;
+            l.raw_payload = r.raw_payload;
+          }
+        }
+        this.save();
+        return rows.length;
       }
       async replaceFunnelRollups(rows) {
         this.d.funnel_rollups = rows;
@@ -22746,6 +22765,601 @@ var init_instantly = __esm({
   }
 });
 
+// src/lib/store.ts
+import { readFileSync as readFileSync2, writeFileSync as writeFileSync2, mkdirSync as mkdirSync3, existsSync as existsSync2 } from "node:fs";
+import path3 from "node:path";
+import { randomUUID as randomUUID2 } from "node:crypto";
+function chunks(arr, n = CHUNK) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+function getStore() {
+  if (_store) return _store;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (process.env.LOCAL_STORE === "1" || !url || !key) {
+    if (!url || !key) log.warn("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not set \u2014 using local JSON store (data/local-store.json)");
+    _store = new LocalStore();
+  } else {
+    _store = new SupabaseStore(url, key);
+  }
+  return _store;
+}
+var CHUNK, SupabaseStore, LocalStore, _store;
+var init_store = __esm({
+  "src/lib/store.ts"() {
+    "use strict";
+    init_dist4();
+    init_log();
+    CHUNK = 500;
+    SupabaseStore = class {
+      backend = "supabase";
+      sb;
+      constructor(url, key) {
+        this.sb = createClient(url, key, { auth: { persistSession: false } });
+      }
+      raw() {
+        return this.sb;
+      }
+      async must(p) {
+        const { data, error } = await p;
+        if (error) throw new Error(error.message);
+        return data;
+      }
+      /** PostgREST caps responses at 1000 rows — page through with .range(). */
+      async paged(query) {
+        const out = [];
+        for (let from = 0; ; from += 1e3) {
+          const page = await this.must(query(from, from + 999));
+          out.push(...page);
+          if (page.length < 1e3) break;
+        }
+        return out;
+      }
+      async upsertApps(rows) {
+        const ids = /* @__PURE__ */ new Map();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        for (const batch of chunks(rows)) {
+          const keys = batch.map((r) => r.store_id);
+          const existing = await this.must(
+            this.sb.from("apps").select("id, store_id, store").in("store_id", keys)
+          );
+          const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e.id]));
+          const inserts = [];
+          for (const r of batch) {
+            const k = `${r.store}:${r.store_id}`;
+            if (have.has(k)) ids.set(k, have.get(k));
+            else inserts.push({ ...r, first_seen_at: now, last_seen_at: now });
+          }
+          if (inserts.length) {
+            const created = await this.must(
+              this.sb.from("apps").upsert(inserts, { onConflict: "store_id,store" }).select("id, store_id, store")
+            );
+            for (const c of created) ids.set(`${c.store}:${c.store_id}`, c.id);
+          }
+          for (const r of batch) {
+            const k = `${r.store}:${r.store_id}`;
+            if (have.has(k)) {
+              await this.must(
+                this.sb.from("apps").update({
+                  name: r.name,
+                  developer_name: r.developer_name,
+                  developer_domain: r.developer_domain,
+                  category: r.category,
+                  description: r.description,
+                  last_seen_at: now
+                }).eq("id", have.get(k))
+              );
+            }
+          }
+        }
+        return ids;
+      }
+      async insertSnapshots(rows) {
+        let n = 0;
+        for (const batch of chunks(rows)) {
+          await this.must(this.sb.from("app_snapshots").upsert(batch, {
+            onConflict: "app_id,geo,chart_type,source,snapshot_date",
+            ignoreDuplicates: true
+          }));
+          n += batch.length;
+        }
+        return n;
+      }
+      async listApps() {
+        return this.paged((from, to) => this.sb.from("apps").select("*").order("id").range(from, to));
+      }
+      async listSnapshotsSince(isoDate) {
+        return this.paged(
+          (from, to) => this.sb.from("app_snapshots").select("*").gte("captured_at", isoDate).order("id").range(from, to)
+        );
+      }
+      async upsertScores(rows) {
+        for (const batch of chunks(rows)) {
+          await this.must(this.sb.from("app_scores").upsert(batch, { onConflict: "app_id,geo" }));
+        }
+      }
+      async listScores() {
+        return this.paged((from, to) => this.sb.from("app_scores").select("*").order("app_id").range(from, to));
+      }
+      async upsertRollups(rows) {
+        for (const batch of chunks(rows)) {
+          await this.must(this.sb.from("app_rollups").upsert(batch, { onConflict: "app_id" }));
+        }
+      }
+      async listRollups() {
+        return this.paged((from, to) => this.sb.from("app_rollups").select("*").order("app_id").range(from, to));
+      }
+      async upsertAnalyses(rows) {
+        for (const batch of chunks(rows)) {
+          await this.must(this.sb.from("app_analysis").upsert(batch, { onConflict: "app_id" }));
+        }
+      }
+      async listAnalyses() {
+        return this.paged((from, to) => this.sb.from("app_analysis").select("*").order("app_id").range(from, to));
+      }
+      async markTooComplex(appIds) {
+        for (let i = 0; i < appIds.length; i += 500) {
+          const batch = appIds.slice(i, i + 500);
+          await this.must(this.sb.from("apps").update({ status: "too_complex" }).in("id", batch));
+          await this.must(this.sb.from("app_rollups").update({ shortlisted: false }).in("app_id", batch));
+        }
+      }
+      async insertClaims(rows) {
+        for (const batch of chunks(rows)) {
+          await this.must(this.sb.from("app_claims").upsert(batch, {
+            onConflict: "app_id,claimed_metric,claim_source_url",
+            ignoreDuplicates: true
+          }));
+        }
+        return rows.length;
+      }
+      async listUnverifiedClaims() {
+        return this.paged((from, to) => this.sb.from("app_claims").select("*").is("verified_value", null).order("id").range(from, to));
+      }
+      async updateClaim(id, patch) {
+        await this.must(this.sb.from("app_claims").update(patch).eq("id", id));
+      }
+      async setFactCheckFlag(appIds) {
+        if (!appIds.length) return;
+        await this.must(this.sb.from("app_rollups").update({ fact_check_flag: true }).in("app_id", appIds));
+      }
+      async upsertCompany(row) {
+        await this.must(this.sb.from("app_companies").upsert(row, { onConflict: "app_id" }));
+      }
+      async listCompanies() {
+        return this.paged((from, to) => this.sb.from("app_companies").select("*").order("app_id").range(from, to));
+      }
+      async upsertIdeas(rows) {
+        if (!rows.length) return 0;
+        try {
+          for (const batch of chunks(rows)) {
+            await this.must(this.sb.from("idea_radar").upsert(batch, { onConflict: "dedup_key" }));
+          }
+          return rows.length;
+        } catch (err) {
+          if (/idea_radar|does not exist|find the table|schema cache/i.test(String(err))) {
+            log.warn("idea_radar table missing \u2014 apply migration 0005_idea_radar.sql to persist ideas");
+            return 0;
+          }
+          throw err;
+        }
+      }
+      async listIdeas() {
+        try {
+          return await this.paged((from, to) => this.sb.from("idea_radar").select("*").order("play", { ascending: false, nullsFirst: false }).range(from, to));
+        } catch (err) {
+          if (/idea_radar|does not exist|find the table|schema cache/i.test(String(err))) return [];
+          throw err;
+        }
+      }
+      async recordRun(source, startedAt, ok, detail) {
+        await this.must(this.sb.from("ingest_runs").insert({
+          source,
+          started_at: startedAt,
+          finished_at: (/* @__PURE__ */ new Date()).toISOString(),
+          ok,
+          detail
+        }));
+      }
+    };
+    LocalStore = class {
+      backend = "local";
+      file = path3.join(process.cwd(), "data", "local-store.json");
+      d;
+      constructor() {
+        mkdirSync3(path3.dirname(this.file), { recursive: true });
+        this.d = existsSync2(this.file) ? JSON.parse(readFileSync2(this.file, "utf8")) : { apps: [], app_snapshots: [], app_claims: [], app_scores: [], app_rollups: [], app_companies: [], ingest_runs: [], _claimSeq: 1 };
+      }
+      raw() {
+        return null;
+      }
+      save() {
+        writeFileSync2(this.file, JSON.stringify(this.d));
+      }
+      async upsertApps(rows) {
+        const ids = /* @__PURE__ */ new Map();
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const byKey = new Map(this.d.apps.map((a) => [`${a.store}:${a.store_id}`, a]));
+        for (const r of rows) {
+          const k = `${r.store}:${r.store_id}`;
+          const ex = byKey.get(k);
+          if (ex) {
+            Object.assign(ex, { name: r.name, developer_name: r.developer_name, developer_domain: r.developer_domain, category: r.category, description: r.description, last_seen_at: now });
+            ids.set(k, ex.id);
+          } else {
+            const row = { ...r, id: randomUUID2(), first_seen_at: now, last_seen_at: now, status: "active" };
+            this.d.apps.push(row);
+            byKey.set(k, row);
+            ids.set(k, row.id);
+          }
+        }
+        this.save();
+        return ids;
+      }
+      async insertSnapshots(rows) {
+        const seen = new Set(this.d.app_snapshots.map((s) => `${s.app_id}|${s.geo}|${s.chart_type}|${s.source}|${s.snapshot_date}`));
+        let n = 0;
+        for (const r of rows) {
+          const k = `${r.app_id}|${r.geo}|${r.chart_type}|${r.source}|${r.snapshot_date}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          this.d.app_snapshots.push(r);
+          n++;
+        }
+        this.save();
+        return n;
+      }
+      async listApps() {
+        return this.d.apps;
+      }
+      async listSnapshotsSince(isoDate) {
+        return this.d.app_snapshots.filter((s) => s.captured_at >= isoDate);
+      }
+      async upsertScores(rows) {
+        const byKey = new Map(this.d.app_scores.map((s) => [`${s.app_id}|${s.geo}`, s]));
+        for (const r of rows) {
+          const ex = byKey.get(`${r.app_id}|${r.geo}`);
+          if (ex) Object.assign(ex, r);
+          else {
+            this.d.app_scores.push(r);
+            byKey.set(`${r.app_id}|${r.geo}`, r);
+          }
+        }
+        this.save();
+      }
+      async upsertRollups(rows) {
+        const byKey = new Map(this.d.app_rollups.map((s) => [s.app_id, s]));
+        for (const r of rows) {
+          const ex = byKey.get(r.app_id);
+          if (ex) Object.assign(ex, r);
+          else {
+            this.d.app_rollups.push(r);
+            byKey.set(r.app_id, r);
+          }
+        }
+        this.save();
+      }
+      async listRollups() {
+        return this.d.app_rollups;
+      }
+      async listScores() {
+        return this.d.app_scores;
+      }
+      async upsertAnalyses(rows) {
+        this.d.app_analysis ??= [];
+        const byKey = new Map(this.d.app_analysis.map((a) => [a.app_id, a]));
+        for (const r of rows) {
+          const ex = byKey.get(r.app_id);
+          if (ex) Object.assign(ex, r);
+          else {
+            this.d.app_analysis.push(r);
+            byKey.set(r.app_id, r);
+          }
+        }
+        this.save();
+      }
+      async listAnalyses() {
+        return this.d.app_analysis ?? [];
+      }
+      async markTooComplex(appIds) {
+        const set = new Set(appIds);
+        for (const a of this.d.apps) if (set.has(a.id)) a.status = "too_complex";
+        for (const r of this.d.app_rollups) if (set.has(r.app_id)) r.shortlisted = false;
+        this.save();
+      }
+      async insertClaims(rows) {
+        const seen = new Set(this.d.app_claims.map((c) => `${c.app_id}|${c.claimed_metric}|${c.claim_source_url}`));
+        let n = 0;
+        for (const r of rows) {
+          const k = `${r.app_id}|${r.claimed_metric}|${r.claim_source_url}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          this.d.app_claims.push({ ...r, id: this.d._claimSeq++ });
+          n++;
+        }
+        this.save();
+        return n;
+      }
+      async listUnverifiedClaims() {
+        return this.d.app_claims.filter((c) => c.verified_value == null);
+      }
+      async updateClaim(id, patch) {
+        const c = this.d.app_claims.find((c2) => c2.id === id);
+        if (c) Object.assign(c, patch);
+        this.save();
+      }
+      async setFactCheckFlag(appIds) {
+        const set = new Set(appIds);
+        for (const r of this.d.app_rollups) if (set.has(r.app_id)) r.fact_check_flag = true;
+        this.save();
+      }
+      async upsertCompany(row) {
+        const ex = this.d.app_companies.find((c) => c.app_id === row.app_id);
+        if (ex) Object.assign(ex, row);
+        else this.d.app_companies.push(row);
+        this.save();
+      }
+      async listCompanies() {
+        return this.d.app_companies;
+      }
+      async upsertIdeas(rows) {
+        this.d.idea_radar ??= [];
+        const byKey = new Map(this.d.idea_radar.map((i) => [i.dedup_key, i]));
+        for (const r of rows) {
+          const ex = byKey.get(r.dedup_key);
+          if (ex) Object.assign(ex, r);
+          else {
+            this.d.idea_radar.push(r);
+            byKey.set(r.dedup_key, r);
+          }
+        }
+        this.save();
+        return rows.length;
+      }
+      async listIdeas() {
+        return this.d.idea_radar ?? [];
+      }
+      async recordRun(source, startedAt, ok, detail) {
+        this.d.ingest_runs.push({ source, started_at: startedAt, finished_at: (/* @__PURE__ */ new Date()).toISOString(), ok, detail });
+        this.save();
+      }
+    };
+    _store = null;
+  }
+});
+
+// src/leads/signals.ts
+function storeUrl(store, storeId) {
+  return store === "apple" ? `https://apps.apple.com/app/id${storeId}` : `https://play.google.com/store/apps/details?id=${storeId}`;
+}
+function signalText(appName, r) {
+  const geos = r.geos_live ?? [];
+  const rank = r.best_rank != null ? `#${r.best_rank}` : "on the charts";
+  const head2 = geos.length > 1 ? `${appName} is charting ${rank} across ${geos.length} markets (${geos.slice(0, 6).join(", ")}${geos.length > 6 ? "\u2026" : ""})` : `${appName} is charting ${rank} in ${geos[0] ?? "one market"}`;
+  const gap = (r.geo_gap ?? []).length ? ` \u2014 absent from ${r.geo_gap.slice(0, 4).join(", ")}, a creator-cheap geo-arbitrage entry` : "";
+  const newGeo = (r.new_geos ?? []).length ? ` Newly entered ${r.new_geos.slice(0, 3).join(", ")}.` : "";
+  const ratings = r.rating_count != null ? ` ${Number(r.rating_count).toLocaleString()} ratings.` : "";
+  return `${head2}${gap}.${newGeo}${ratings}`.trim();
+}
+async function runSignalRefresh() {
+  const store = getStore();
+  const db = getLeadsDb();
+  const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const [apps, rollups, leads] = await Promise.all([store.listApps(), store.listRollups(), db.listLeadsJoined()]);
+  const rollupByApp = new Map(rollups.map((r) => [r.app_id, r]));
+  const byDomain = /* @__PURE__ */ new Map();
+  const byCanon = /* @__PURE__ */ new Map();
+  const ambiguousCanon = /* @__PURE__ */ new Set();
+  for (const a of apps) {
+    if (!rollupByApp.has(a.id)) continue;
+    const dom = norm(a.developer_domain);
+    if (dom && !byDomain.has(dom)) byDomain.set(dom, a);
+    const c = canonical(a.developer_name);
+    if (c.length >= 3) {
+      const existing = byCanon.get(c);
+      if (existing && norm(existing.developer_domain) !== norm(a.developer_domain)) ambiguousCanon.add(c);
+      else if (!existing) byCanon.set(c, a);
+    }
+  }
+  const updates = [];
+  let viaDomain = 0, viaName = 0, withGap = 0;
+  for (const l of leads) {
+    let app = byDomain.get(norm(l.domain));
+    let how = app ? "developer_domain" : null;
+    if (!app && l.company) {
+      const c = canonical(l.company);
+      if (c.length >= 3 && !ambiguousCanon.has(c)) {
+        app = byCanon.get(c);
+        if (app) how = "developer_name";
+      }
+    }
+    if (!app) continue;
+    if (how === "developer_domain") viaDomain++;
+    else viaName++;
+    const r = rollupByApp.get(app.id);
+    if (!(r.geos_live ?? []).length) continue;
+    if ((r.geo_gap ?? []).length) withGap++;
+    const text = signalText(app.name, r);
+    const evidence = {
+      verified: true,
+      source: "app_discovery_engine",
+      matched_by: how,
+      app_name: app.name,
+      store: app.store,
+      store_id: app.store_id,
+      best_rank: r.best_rank,
+      geos_live: r.geos_live,
+      geo_gap: r.geo_gap,
+      new_geos: r.new_geos,
+      rating_count: r.rating_count,
+      momentum_score: r.momentum_score,
+      is_incumbent: r.is_incumbent,
+      verified_at: startedAt
+    };
+    const raw = { ...l.raw_payload ?? {}, expansion_signal: text, signal_verified: true, signal: evidence };
+    updates.push({ id: l.id, signal_source_url: storeUrl(app.store, app.store_id), raw_payload: raw });
+  }
+  const written = updates.length ? await db.updateLeadSignals(updates) : 0;
+  await db.recordRun("signal_refresh", startedAt, { input: leads.length, output: written });
+  log.info(`signal_refresh: ${written} leads given verified live-traction signals (${viaDomain} by domain, ${viaName} by name, ${withGap} with a real geo-gap)`);
+  return { verified: written, viaDomain, viaName, withGap };
+}
+var norm, SUFFIXES, canonical;
+var init_signals = __esm({
+  async "src/leads/signals.ts"() {
+    "use strict";
+    init_log();
+    init_store();
+    init_db();
+    norm = (s) => (s ?? "").toLowerCase().replace(/^www\./, "").trim();
+    SUFFIXES = /\b(inc|llc|ltd|limited|corp|corporation|co|company|gmbh|srl|sa|sas|bv|oy|ab|plc|pvt|private|technologies|technology|tech|labs|lab|software|solutions|studios|studio|games|game|interactive|app|apps|mobile|digital|media|group|holdings|ventures|the|and)\b/g;
+    canonical = (s) => (s ?? "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9 ]+/g, " ").replace(SUFFIXES, " ").replace(/\s+/g, " ").trim();
+    if (import.meta.url === `file://${process.argv[1]}`) {
+      await runSignalRefresh();
+    }
+  }
+});
+
+// src/lib/config.ts
+var KNOWN_MAJORS;
+var init_config = __esm({
+  "src/lib/config.ts"() {
+    "use strict";
+    KNOWN_MAJORS = [
+      "google",
+      "meta platforms",
+      "facebook",
+      "whatsapp",
+      "instagram",
+      "apple",
+      "microsoft",
+      "amazon",
+      "netflix",
+      "spotify",
+      "bytedance",
+      "tiktok",
+      "tencent",
+      "snap inc",
+      "pinterest",
+      "x corp",
+      "twitter",
+      "telegram",
+      "disney",
+      "roblox",
+      "supercell",
+      "king",
+      "electronic arts",
+      "activision",
+      "zoom",
+      "paypal",
+      "uber",
+      "booking.com",
+      "airbnb",
+      "duolingo",
+      "openai",
+      "adobe",
+      "samsung",
+      "yandex",
+      "alibaba",
+      "shein",
+      "temu",
+      "canva",
+      "anthropic",
+      "perplexity",
+      "deepseek",
+      "x.ai",
+      "xai"
+    ];
+  }
+});
+
+// src/leads/cull-non-apps.ts
+function classify(l) {
+  const name = (l.company ?? "").toLowerCase();
+  if (INCUMBENT_BRANDS.some((b) => name.includes(b)) || KNOWN_MAJORS.some((m) => name.includes(m))) return "incumbent";
+  const text = `${name} ${(l.category ?? "").toLowerCase()}`;
+  if (l.raw_payload?.signal_verified) return "consumer_app";
+  if (NON_APP.test(text)) return "d2c_or_b2b";
+  return "consumer_app";
+}
+async function runCull() {
+  const db = getLeadsDb();
+  const leads = await db.listLeadsJoined();
+  const updates = [];
+  const tally = { incumbent: 0, d2c_or_b2b: 0, consumer_app: 0 };
+  for (const l of leads) {
+    const c = classify(l);
+    tally[c]++;
+    const rp = l.raw_payload ?? {};
+    const want = c === "consumer_app" ? void 0 : c;
+    if (rp.icp_type !== want) {
+      const next = { ...rp };
+      if (want) next.icp_type = want;
+      else delete next.icp_type;
+      updates.push({ id: l.id, signal_source_url: l.signal_source_url, raw_payload: next });
+    }
+  }
+  log.info(`cull: ${leads.length} leads -> ${tally.consumer_app} consumer apps \xB7 ${tally.incumbent} incumbents + ${tally.d2c_or_b2b} D2C/B2B tagged off-ICP`);
+  if (DRY_RUN) {
+    log.info("cull: DRY RUN, nothing written");
+    return { consumer_apps: tally.consumer_app, tagged: updates.length, ...tally };
+  }
+  const written = updates.length ? await db.updateLeadSignals(updates) : 0;
+  log.info(`cull: tagged ${written} leads off-ICP (non-destructive)`);
+  return { consumer_apps: tally.consumer_app, tagged: written, ...tally };
+}
+var DRY_RUN, INCUMBENT_BRANDS, NON_APP;
+var init_cull_non_apps = __esm({
+  async "src/leads/cull-non-apps.ts"() {
+    "use strict";
+    init_config();
+    init_log();
+    init_db();
+    DRY_RUN = process.env.DRY_RUN === "1";
+    INCUMBENT_BRANDS = [
+      "l'oreal",
+      "loreal",
+      "garnier",
+      "maybelline",
+      "estee lauder",
+      "est\xE9e lauder",
+      "unilever",
+      "nestle",
+      "nestl\xE9",
+      "procter",
+      "p&g",
+      "colgate",
+      "nivea",
+      "danone",
+      "coca-cola",
+      "coca cola",
+      "pepsi",
+      "kraft",
+      "mondelez",
+      "jpmorgan",
+      "jp morgan",
+      "chase bank",
+      "goldman",
+      "morgan stanley",
+      "bank of america",
+      "citibank",
+      "citigroup",
+      "wells fargo",
+      "hsbc",
+      "barclays",
+      "american express",
+      "mastercard",
+      "visa inc"
+    ];
+    NON_APP = /beaut|cosmetic|skincare|makeup|fragrance|perfume|apparel|fashion|footwear|jewel|clothing|textile|athleisure|activewear|food and beverage|food & beverage|beverage|grocery|nutrition|supplement|vitamin|personal care|consumer goods|consumer packaged|cpg|fmcg|furniture|home goods|mattress|wholesale|distributor|manufactur|information technology|& services|and services|staffing|recruit|consulting|real estate|automotive|logistics|hospitality|construction|\binsurance\b|\bbank\b|financial services|winery|brewery|spirits/i;
+    if (import.meta.url === `file://${process.argv[1]}`) {
+      await runCull();
+    }
+  }
+});
+
 // src/leads/jobs.ts
 function tierOf(score, tiers = DEFAULT_TIERS) {
   if (score == null) return "\u2013";
@@ -22753,11 +23367,13 @@ function tierOf(score, tiers = DEFAULT_TIERS) {
 }
 var DEFAULT_TIERS;
 var init_jobs = __esm({
-  "src/leads/jobs.ts"() {
+  async "src/leads/jobs.ts"() {
     "use strict";
     init_log();
     init_db();
     init_instantly();
+    await init_signals();
+    await init_cull_non_apps();
     DEFAULT_TIERS = { A: 8, B: 6 };
   }
 });
@@ -22832,7 +23448,7 @@ ${opts.script ? `<script>${opts.script}</script>` : ""}
 // src/leads/routes.ts
 init_log();
 init_db();
-init_jobs();
+await init_jobs();
 init_instantly();
 var send = (res, status, body) => {
   res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
@@ -22872,24 +23488,40 @@ async function pipelinePage(_req, res, url) {
   ]);
   const totals = new Map(funnel.filter((f) => f.source_arm === "*" && f.geo === "*").map((f) => [f.stage, f.count]));
   const msg = url.searchParams.get("msg");
+  const icpView = url.searchParams.get("icp") === "all" ? "all" : "consumer";
+  const isOffIcp = (l) => Boolean(l.raw_payload?.icp_type);
+  const offIcpCount = leads.filter(isOffIcp).length;
+  const shown = icpView === "all" ? leads : leads.filter((l) => !isOffIcp(l));
   const eventsByLead = /* @__PURE__ */ new Map();
   for (const e of events) {
     if (!e.lead_id) continue;
     (eventsByLead.get(e.lead_id) ?? eventsByLead.set(e.lead_id, []).get(e.lead_id)).push({ type: e.type, at: e.occurred_at });
   }
-  const arms = [...new Set(leads.map((l) => l.source_arm))].sort();
-  const geos = [...new Set(leads.map((l) => l.geo ?? "unknown"))].sort();
-  const rows = leads.map((l) => ({
-    ...l,
-    tier: tierOf(l.jaka_score, tiers),
-    created: fmtDate(l.created_at),
-    enriched: fmtDate(l.enriched_at),
-    events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12)
-  }));
+  const arms = [...new Set(shown.map((l) => l.source_arm))].sort();
+  const geos = [...new Set(shown.map((l) => l.geo ?? "unknown"))].sort();
+  const rows = shown.map((l) => {
+    const rp = l.raw_payload ?? {};
+    const sig = rp.signal ?? void 0;
+    return {
+      ...l,
+      tier: tierOf(l.jaka_score, tiers),
+      created: fmtDate(l.created_at),
+      // Real provenance only: the source list/file it came from, and a verified-traction
+      // timestamp when the engine actually matched it to a live app (not the old import-time
+      // "enriched" stamp, which asserted an enrichment that never happened).
+      list: rp.list ?? null,
+      verifiedAt: rp.signal_verified && sig?.verified_at ? fmtDate(sig.verified_at) : null,
+      events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12)
+    };
+  });
   const body = `
 ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` : ""}
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join("")}
+</div>
+<div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <span><b>${shown.length}</b> ${icpView === "all" ? "leads \xB7 all types" : "consumer apps"}${icpView === "consumer" && offIcpCount ? ` <span class="dim">\xB7 ${offIcpCount} non-app (incumbent / D2C / B2B) hidden</span>` : ""}</span>
+  ${icpView === "consumer" ? '<a href="?icp=all" style="color:var(--acc)">show all types</a>' : '<a href="?icp=consumer" style="color:var(--acc)">\u2190 consumer apps only</a>'}
 </div>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search company / domain\u2026" style="min-width:200px">
@@ -22941,8 +23573,8 @@ function render() {
     '<td style="max-width:260px">' + escq((r.reason||'\u2013').slice(0, 120)) + '</td>' +
     '<td>' + (STAGE_LABELS[r.stage] || escq(r.stage||'raw')) + '</td>' +
     '<td><span class="dim">src:</span> ' + escq(r.source_arm) +
-      (r.signal_source_url ? ' \xB7 <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
-      '<br><span class="dim">enriched ' + r.enriched + '</span></td></tr>').join('');
+      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' \xB7 <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
+      '<br><span class="dim">' + (r.list ? 'list: ' + escq(r.list) : 'added ' + r.created) + (r.verifiedAt ? ' \xB7 \u2713 verified' : '') + '</span></td></tr>').join('');
   if (rows.length > 500) $('#count').textContent += ' (first 500 rendered)';
   document.querySelectorAll('tr.leadrow').forEach(tr => tr.onclick = (e) => {
     if (e.target.closest('a')) return;
@@ -22959,11 +23591,13 @@ function render() {
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
-    p.expansion_signal ? '<p style="margin:4px 0"><b>Expansion signal:</b> ' + escq(p.expansion_signal) + '</p>' : '',
+    p.expansion_signal ? '<p style="margin:4px 0">' + (p.signal_verified
+      ? '<span style="background:var(--acc);color:#000;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600">\u2713 LIVE TRACTION</span> '
+      : '<span class="pill" title="not verified against live store data">unverified</span> ') + '<b>Signal:</b> ' + escq(p.expansion_signal) + '</p>' : '',
     p.hiring_signal ? '<p style="margin:4px 0"><b>Hiring signal:</b> ' + escq(p.hiring_signal) + '</p>' : '',
     p.why_selected ? '<p style="margin:4px 0"><b>Why selected:</b> ' + escq(p.why_selected) + '</p>' : '',
-    p.band ? '<p style="margin:4px 0"><b>Apollo band:</b> ' + escq(p.band) + ' (rank ' + escq(String(p.rank ?? '\u2013')) + ', ' + escq(String(p.confidence || '')) + ')</p>' : '',
-    p.momentum_score != null ? '<p style="margin:4px 0"><b>App momentum:</b> ' + p.momentum_score + ' \xB7 live in ' + escq((p.geos_live||[]).join(', ')) + '</p>' : '',
+    p.band ? '<p style="margin:4px 0"><b>ICP fit (heuristic):</b> ' + escq(String(p.band).split(': ').pop()) + (p.confidence ? ' <span class="dim">\xB7 confidence ' + escq(String(p.confidence)) + '</span>' : '') + '</p>' : '',
+    (p.signal_verified && p.signal && p.signal.momentum_score != null) ? '<p style="margin:4px 0"><b>App momentum:</b> ' + p.signal.momentum_score + ' <span class="dim">(live App Store data, rank #' + escq(String(p.signal.best_rank ?? '\u2013')) + ')</span></p>' : '',
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
@@ -22973,8 +23607,10 @@ function leadDetail(r) {
       '<p style="margin:8px 0 4px"><b>Classifier reason:</b> ' + escq(r.reason || 'unclassified') + '</p>' +
       '<p class="dim" style="margin:4px 0">market: ' + escq(r.market_status||'\u2013') + ' \xB7 fit: ' + escq(r.fit_verdict||'\u2013') +
       ' \xB7 hq: ' + escq(r.hq||'\u2013') + '</p>' +
-      '<p class="dim" style="margin:4px 0">provenance: ' + escq(r.source_arm) + ' \xB7 added ' + r.created + ' \xB7 enriched ' + r.enriched +
-      (r.signal_source_url ? ' \xB7 <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">source \u2197</a>' : '') + '</p></div>' +
+      '<p class="dim" style="margin:4px 0">provenance: ' + escq(r.source_arm) +
+      (r.list ? ' \xB7 from <b>' + escq(r.list) + '</b>' : '') + ' \xB7 added ' + r.created +
+      (r.verifiedAt ? ' \xB7 <span style="color:var(--acc)">\u2713 live traction verified ' + escq(r.verifiedAt) + '</span>' : '') +
+      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' \xB7 <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">source \u2197</a>' : '') + '</p></div>' +
     '<div><h4 style="margin:0 0 6px">Activity (delta)</h4>' +
       '<table style="min-width:220px"><thead><tr><th>Date</th><th>Event</th></tr></thead><tbody>' +
       (timeline || '<tr><td colspan="2" class="dim">no events yet \u2014 instantly_sync runs nightly</td></tr>') +
@@ -23158,7 +23794,7 @@ async function performancePage(_req, res) {
     return `<tr><td>${fmtDate(e.occurred_at)}</td><td><b>${esc(l.company ?? "\u2013")}</b> <span class="dim">${esc(l.domain ?? "")}</span></td>
         <td><span class="pill">${esc(l.source_arm)}</span></td><td class="num">${l.jaka_score ?? "\u2013"} (${tierOf(l.jaka_score, tiers)})</td>
         <td>${e.type === "positive_reply" ? '<span style="color:var(--good)">positive</span>' : "reply"}</td>
-        <td>${l.signal_source_url ? `<a href="${esc(l.signal_source_url)}" style="color:var(--acc)">signal</a>` : '<span class="dim">\u2013</span>'}</td></tr>`;
+        <td>${l.signal_source_url && l.signal_source_url.startsWith("http") ? `<a href="${esc(l.signal_source_url)}" style="color:var(--acc)">signal</a>` : '<span class="dim">\u2013</span>'}</td></tr>`;
   }).join("");
   const body = `
 <p class="dim">A/B readout across strategy arms, fed nightly by instantly_sync. Arms flagged when reply rate &lt; 50% of the mean after 100+ sends.</p>

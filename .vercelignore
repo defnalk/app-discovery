@@ -1,0 +1,12 @@
+# Never upload the local PII data store — the deployment reads from Supabase.
+data/
+# The apps static dashboard is a separate Vercel project; keep it out of this one.
+public/
+# Not needed by the serverless function.
+docs/
+logs/
+leads_out/
+supabase/
+.github/
+.git/
+*.numbers

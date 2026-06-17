@@ -106,6 +106,7 @@ export interface LeadsDb {
   insertClassifications(rows: NewClassification[]): Promise<number>;
   listLeadsJoined(): Promise<LeadJoined[]>;
   updateLeadStages(stages: Map<string, string>): Promise<void>;
+  updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]): Promise<number>;
   replaceFunnelRollups(rows: FunnelRow[]): Promise<void>;
   getFunnelRollups(): Promise<FunnelRow[]>;
   listCampaigns(status?: string): Promise<CampaignRow[]>;
@@ -194,6 +195,14 @@ class SupabaseLeadsDb implements LeadsDb {
         await this.must(this.sb.from('leads').update({ stage }).in('id', ids.slice(i, i + 500)));
       }
     }
+  }
+
+  /** Overwrite a lead's signal_source_url + raw_payload (used to attach verified app-traction signals). */
+  async updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]) {
+    for (const r of rows) {
+      await this.must(this.sb.from('leads').update({ signal_source_url: r.signal_source_url, raw_payload: r.raw_payload }).eq('id', r.id));
+    }
+    return rows.length;
   }
 
   async replaceFunnelRollups(rows: FunnelRow[]) {
@@ -370,6 +379,12 @@ class LocalLeadsDb implements LeadsDb {
   async updateLeadStages(stages: Map<string, string>) {
     for (const l of this.d.leads) { const s = stages.get(l.id); if (s) l.stage = s; }
     this.save();
+  }
+  async updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]) {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const l of this.d.leads) { const r = byId.get(l.id); if (r) { (l as Record<string, unknown>).signal_source_url = r.signal_source_url; (l as Record<string, unknown>).raw_payload = r.raw_payload; } }
+    this.save();
+    return rows.length;
   }
   async replaceFunnelRollups(rows: FunnelRow[]) { this.d.funnel_rollups = rows; this.save(); }
   async getFunnelRollups() { return this.d.funnel_rollups; }

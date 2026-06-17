@@ -192,7 +192,7 @@ export async function buildDashboard() {
   const srcMix = ideas.reduce<Record<string, number>>((m, i) => ((m[i.source] = (m[i.source] ?? 0) + 1), m), {});
   const ideaCards = ideas.slice(0, 60).map((i, n) => {
     const top = n < 12;
-    return `<div class="idea${top ? ' idea-top' : ''}">
+    return `<div class="idea${top ? ' idea-top' : ''}${n >= 12 ? ' idea-more' : ''}">
       <div class="idea-head"><span class="idea-play${top ? ' play-hi' : ''}">${i.play.toFixed(0)}</span>
         <b>${esc(i.app_name)}</b><span class="idea-src">${esc(i.source)}</span></div>
       <div class="dim" style="margin:3px 0 6px;font-size:12px">${esc(i.category ?? '–')} · ${buildPill(i.buildability)} · novelty ${i.novelty ?? '–'}/10 · demand ${i.demand ?? '–'}/10</div>
@@ -201,14 +201,11 @@ export async function buildDashboard() {
       ${i.source_url ? `<a href="${esc(i.source_url)}" target="_blank" class="idea-link">source ↗</a>` : ''}
     </div>`;
   }).join('');
-  const srcSummary = Object.entries(srcMix).map(([s, n]) => `${n} ${esc(s)}`).join(' · ');
+  void srcMix;
   const ideasPanel = ideas.length ? `
 <div class="panel">
-  <div class="filters" style="margin-bottom:10px;align-items:baseline">
-    <b>💡 Idea Radar</b>
-    <span class="dim">groundbreaking-but-simple app ideas from X · LinkedIn · Product Hunt — ranked by Play score (novelty × demand × build speed) · top 12 in green · ${ideas.length} ideas (${srcSummary})</span>
-  </div>
-  <div class="idea-grid">${ideaCards}</div>
+  <div class="idea-grid" id="idea-grid">${ideaCards}</div>
+  ${ideas.length > 12 ? `<button class="ghost" id="idea-toggle" style="margin-top:12px">Show all ${ideas.length} ideas ↓</button>` : ''}
   <p class="muted-note">Live X + LinkedIn scraping refreshes this nightly once <code>APIFY_TOKEN</code> + <code>ANTHROPIC_API_KEY</code> are set; until then it shows the latest research snapshot.</p>
 </div>` : '';
 
@@ -229,41 +226,80 @@ export async function buildDashboard() {
   .idea-src { margin-left:auto; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); border:1px solid var(--line); border-radius:99px; padding:1px 7px; }
   .idea-why { color:var(--dim); margin-top:6px; }
   .idea-link { display:inline-block; margin-top:7px; color:var(--acc); font-size:12px; text-decoration:none; }
+  .hero p { margin:0; color:var(--dim); font-size:13.5px; max-width:780px; }
+  .stats { display:flex; gap:10px; flex-wrap:wrap; margin:13px 0 2px; }
+  .stat-chip { border:1px solid var(--line); border-radius:10px; padding:8px 14px; background:var(--panel); }
+  .stat-chip b { font-size:18px; display:block; line-height:1.15; }
+  .stat-chip span { color:var(--dim); font-size:11px; }
+  .tabs { display:flex; gap:4px; margin:16px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .tabbtn { background:none; color:var(--dim); border:0; border-bottom:2px solid transparent; border-radius:0; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
+  .tabbtn:hover { color:var(--txt); }
+  .tabbtn.active { color:var(--txt); border-bottom-color:var(--acc); }
+  .tabpane { display:none; }
+  .tabpane.active { display:block; }
+  th[title] { text-decoration:underline dotted var(--line); text-underline-offset:3px; }
+  .idea-more { display:none; }
+  .idea-grid.show-all .idea-more { display:block; }
 </style>
-<details class="panel" style="padding:10px 14px">
+<div class="hero">
+  <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
+  <div class="stats">
+    <div class="stat-chip"><b>${rows.length}</b><span>apps tracked</span></div>
+    <div class="stat-chip"><b>${Math.min(100, rows.length)}</b><span>top plays · green</span></div>
+    <div class="stat-chip"><b>${ideas.length}</b><span>fresh ideas</span></div>
+    <div class="stat-chip"><b>${esc(latestDay)}</b><span>chart data</span></div>
+  </div>
+</div>
+<div class="tabs">
+  <button class="tabbtn active" data-tab="plays">🎯 Top Plays</button>
+  <button class="tabbtn" data-tab="ideas">💡 Idea Radar</button>
+  <button class="tabbtn" data-tab="charts">📈 Charts</button>
+</div>
+
+<section class="tabpane active" id="tab-plays">
+  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Click a row for per-geo trends &amp; the AI analysis. Incumbents and slow/too-complex builds are filtered out. Built ${esc(startedAt)}.</p>
+  <div class="panel filters">
+    <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
+    <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
+    <label>Category <select id="cat"><option value="">all</option>${categories.map((c) => `<option>${esc(c)}</option>`).join('')}</select></label>
+    <label>First seen <select id="seen"><option value="">any time</option><option value="7">last 7d</option><option value="30">last 30d</option><option value="90">last 90d</option></select></label>
+    <label>Momentum ≥ <input type="number" id="mom" step="0.05" style="width:70px"></label>
+    <label><input type="checkbox" id="gap"> geo-gap only</label>
+    <span class="dim" id="count"></span>
+  </div>
+  <div class="panel" style="overflow-x:auto">
+  <table id="t"><thead><tr>
+    <th data-k="play" class="num" title="Build-worthiness 0–100: idea + momentum + open market + build speed + traction">Play ▾</th>
+    <th data-k="name">App</th><th data-k="category">Category</th><th>Geos live</th>
+    <th title="Best chart rank per day, last 14 days">Rank 14d</th><th data-k="momentum" class="num" title="Rank velocity + rating growth + new-geo expansion">Momentum</th>
+    <th data-k="idea" class="num" title="Concept quality 0–10 — proven demand, simple loop, monetizable">Idea</th><th data-k="build" title="How fast a small team could rebuild the core with AI">Build</th><th data-k="sat" class="num" title="Market saturation — lower = more room to win">Satur.</th>
+    <th data-k="rating_count" class="num" title="Fact-checked rating count (real traction)">Verified ratings</th><th title="Claimed vs verified traction check">Fact check</th><th data-k="first_seen" title="When we first caught this app">First caught</th>
+  </tr></thead><tbody></tbody></table>
+  </div>
+</section>
+
+<section class="tabpane" id="tab-ideas">
+  <p class="muted-note" style="margin:0 0 10px">Groundbreaking-but-simple app concepts scouted from <b>X · LinkedIn · Product Hunt</b>, scored the same way — <b class="play-hi">green</b> = top 12 plays. Showing 12; expand for the full list.</p>
+  ${ideasPanel}
+</section>
+
+<section class="tabpane" id="tab-charts">
+  <p class="muted-note" style="margin:0 0 10px">Live App Store top-5s per category, plus what's hot, moving and new right now — switch geo and chart type.</p>
+  <div class="panel">
+    <div class="filters" style="margin-bottom:10px">
+      <label>Geo <select id="tc-geo"></select></label>
+      <label>Chart <select id="tc-chart"></select></label>
+      <span class="dim">top ${TOP_N} per category · #n = store chart rank · ${esc(latestDay)} · click an app for details</span>
+    </div>
+    <div id="tc-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"></div>
+  </div>
+</section>
+
+<details class="panel" style="padding:10px 14px;margin-top:18px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
   <p class="muted-note">A source activates the moment its key is added as a GitHub secret — no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
-</details>
-${ideasPanel}
-<div class="panel">
-  <div class="filters" style="margin-bottom:10px">
-    <b>Top charts</b>
-    <label>Geo <select id="tc-geo"></select></label>
-    <label>Chart <select id="tc-chart"></select></label>
-    <span class="dim">top ${TOP_N} tracked apps per category · #n = store chart rank · ${esc(latestDay)} · click an app for details</span>
-  </div>
-  <div id="tc-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"></div>
-</div>
-<div class="panel filters">
-  <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
-  <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
-  <label>Category <select id="cat"><option value="">all</option>${categories.map((c) => `<option>${esc(c)}</option>`).join('')}</select></label>
-  <label>First seen <select id="seen"><option value="">any time</option><option value="7">last 7d</option><option value="30">last 30d</option><option value="90">last 90d</option></select></label>
-  <label>Momentum ≥ <input type="number" id="mom" step="0.05" style="width:70px"></label>
-  <label><input type="checkbox" id="gap"> geo-gap only</label>
-  <span class="dim" id="count"></span>
-</div>
-<div class="panel" style="overflow-x:auto">
-<table id="t"><thead><tr>
-  <th data-k="play" class="num">Play ▾</th>
-  <th data-k="name">App</th><th data-k="category">Category</th><th>Geos live</th>
-  <th>Rank 14d</th><th data-k="momentum" class="num">Momentum</th>
-  <th data-k="idea" class="num">Idea</th><th data-k="build">Build</th><th data-k="sat" class="num">Satur.</th>
-  <th data-k="rating_count" class="num">Verified ratings</th><th>Fact check</th><th data-k="first_seen">First caught</th>
-</tr></thead><tbody></tbody></table>
-<p class="muted-note">Built ${esc(startedAt)} · ${rows.length} startup apps buildable in ≤2 weeks with AI · <b class="play-hi">top 100 plays</b> (by combined Play score: idea + momentum + open market + build speed + traction) highlighted green &amp; pinned on top · click a row for per-geo deltas &amp; analysis · incumbents &amp; slow/too-complex builds removed · read-only</p>
-</div>`;
+</details>`;
 
   const script = `
 const ROWS = ${embedJson(rows)};
@@ -373,6 +409,7 @@ function renderTopCharts() {
   document.querySelectorAll('.tc-app').forEach(li => li.onclick = () => openApp(+li.dataset.i));
 }
 function openApp(i) {
+  showTab('plays');
   $('#q').value = ROWS[i].name;
   ['geo','cat','seen','mom'].forEach(id => $('#' + id).value = '');
   $('#gap').checked = false;
@@ -390,6 +427,16 @@ document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   sortKey = k; render();
 });
 ['q','geo','cat','seen','mom','gap'].forEach(id => $('#'+id).addEventListener('input', render));
+
+// Tabs — show one focused section at a time
+function showTab(t) {
+  document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
+}
+document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+const ideaToggle = $('#idea-toggle');
+if (ideaToggle) ideaToggle.onclick = () => { $('#idea-grid').classList.add('show-all'); ideaToggle.remove(); };
+
 render();
 renderTopCharts();`;
 
