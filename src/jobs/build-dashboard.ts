@@ -57,19 +57,15 @@ export async function buildDashboard() {
     m.set(d, Math.min(m.get(d) ?? Infinity, s.chart_rank));
   }
 
-  // Curation for the shared "Play Database" page: show only startup-built apps that
-  // are fast to vibecode. Incumbents (Spotify, Google Maps, ChatGPT-scale) and
-  // slow/unanalyzed builds are dropped from the page — they stay in the DB, just
-  // off this view. Tighten to ['weekend','few_days'] for a strict ≤1-week list.
-  const QUICK_BUILD = new Set(['weekend', 'few_days', 'week_or_two']);
+  // Show the FULL catalog (team wants every app + every geo browsable in the new UI).
+  // Nothing is dropped here: the Play score plus the incumbent / too-complex penalties
+  // push non-buildable apps down, and the IA (Home top-10, Top-100, category pages)
+  // keeps it digestible. Incumbents keep their pill so they stay distinguishable.
   const rows = rollups
     .map((r) => {
       const app = appById.get(r.app_id);
       if (!app) return null;
-      if (app.status === 'too_complex') return null; // dropped by analysis; kept in DB only
-      if (r.is_incumbent) return null; // no Spotify / Google Maps / ChatGPT-scale apps
       const an = analysisById.get(r.app_id);
-      if (!QUICK_BUILD.has(an?.buildability ?? '')) return null; // only quick-to-vibecode startup apps
       const series = days.map((d) => rankByAppDay.get(r.app_id)?.get(d) ?? null);
       const deltas = (scoresByApp.get(r.app_id) ?? [])
         .filter((s) => s.rank_now != null)
@@ -116,7 +112,7 @@ export async function buildDashboard() {
   const moms = rows.map((r) => r!.momentum).sort((a, b) => a - b);
   const momCap = moms.length ? Math.max(1e-9, moms[Math.min(moms.length - 1, Math.floor(moms.length * 0.95))]!) : 1;
   const ratingMax = Math.max(1e-9, ...rows.map((r) => Math.log10(1 + (r!.rating_count ?? 0))));
-  const BUILD_SPEED: Record<string, number> = { weekend: 1, few_days: 0.85, week_or_two: 0.6 };
+  const BUILD_SPEED: Record<string, number> = { weekend: 1, few_days: 0.85, week_or_two: 0.6, months: 0.25, too_complex: 0.08 };
   for (const r of rows) {
     const ideaN = clamp01((r!.idea ?? 0) / 10);
     const momN = clamp01((r!.momentum ?? 0) / momCap);
@@ -125,6 +121,7 @@ export async function buildDashboard() {
     const tractionN = clamp01(Math.log10(1 + (r!.rating_count ?? 0)) / ratingMax);
     let s = 0.30 * ideaN + 0.24 * momN + 0.16 * openN + 0.12 * buildN + 0.18 * tractionN;
     if (r!.flag) s *= 0.6; // unverified / suspect traction → discount
+    if (r!.incumbent) s *= 0.5; // not a build target — keep visible but sink it below real plays
     r!.play = Math.round(clamp01(s) * 1000) / 10;
   }
   rows.sort((a, b) => b!.play - a!.play);
@@ -351,8 +348,10 @@ function render() {
     (mom == null || r.momentum >= mom) && (!gap || r.geo_gap.length));
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
-  $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
+  const CAP = 500;
+  const shown = rows.slice(0, CAP);
+  $('#count').textContent = rows.length <= CAP ? rows.length + ' shown' : 'showing top ' + CAP + ' of ' + rows.length + ' — narrow by category or search';
+  $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
