@@ -286,6 +286,8 @@ export async function buildDashboard() {
   tr.approw.claimed td { opacity:.6; }
   .cw-timer { color:var(--warn); font-variant-numeric:tabular-nums; }
   .gap-all summary { cursor:pointer; color:var(--dim); }
+  select.rc { max-width:180px; font-size:12px; padding:3px 6px; color:var(--good); border-color:var(--line); }
+  select.rc.rc-claimed { color:var(--warn); }
 </style>
 <div class="hero">
   <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
@@ -328,7 +330,7 @@ export async function buildDashboard() {
   <div class="panel" style="overflow-x:auto">
   <table id="t"><thead><tr>
     <th data-k="play" class="num" title="Build-worthiness 0–100: idea + momentum + open market + build speed + traction">Play ▾</th>
-    <th data-k="name">App</th><th data-k="category">Category</th><th>Geos live</th>
+    <th data-k="name">App</th><th title="Who has reserved or started this play — pick from the dropdown to claim it">Claim</th><th data-k="category">Category</th><th>Geos live</th>
     <th title="Best chart rank per day, last 14 days">Rank 14d</th><th data-k="momentum" class="num" title="Rank velocity + rating growth + new-geo expansion">Momentum</th>
     <th data-k="idea" class="num" title="Concept quality 0–10 — proven demand, simple loop, monetizable">Idea</th><th data-k="build" title="How fast a small team could rebuild the core with AI">Build</th><th data-k="sat" class="num" title="Market saturation — lower = more room to win">Satur.</th>
     <th data-k="rating_count" class="num" title="Fact-checked rating count (real traction)">Verified ratings</th><th title="Claimed vs verified traction check">Fact check</th><th data-k="first_seen" title="When we first caught this app">First caught</th>
@@ -423,8 +425,9 @@ function render() {
   $('#count').textContent = rows.length <= CAP ? rows.length + ' shown' : 'showing top ' + CAP + ' of ' + rows.length + ' — narrow by category or search';
   $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + (CLAIMS[r.id] ? ' claimed' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
-    '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') + (CLAIMS[r.id] ? ' <span class="claimed-pill">claimed: ' + escq(CLAIMS[r.id].manager_name) + '</span>' : '') +
+    '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
+    '<td>' + rowClaimSelect(r) + '</td>' +
     '<td>' + escq(r.category||'–') + '</td>' +
     '<td>' + r.geos.map(g => '<span class="pill' + (r.new_geos.includes(g) ? ' new' : '') + '">' + g + '</span>').join('') +
       (r.geo_gap.length ? '<br><span class="dim">gap:</span> ' + r.geo_gap.map(g => '<span class="pill gap">' + g + '</span>').join('') : '') + '</td>' +
@@ -437,18 +440,27 @@ function render() {
     '<td>' + (r.flag ? '<span class="flag">⚠ suspect</span>' : '<span class="dim">ok</span>') + '</td>' +
     '<td>' + r.first_seen + '</td></tr>').join('');
   document.querySelectorAll('tr.approw').forEach(tr => tr.onclick = (e) => {
-    if (e.target.closest('a') || e.target.closest('.claim-btn')) return;
+    if (e.target.closest('a') || e.target.closest('.claim-btn') || e.target.closest('select.rc')) return;
     const open = tr.nextElementSibling?.classList.contains('detail');
     document.querySelectorAll('tr.detail').forEach(d => d.remove());
     if (open) return;
     openDetailRow(tr);
+  });
+  document.querySelectorAll('select.rc').forEach(sel => sel.onchange = (e) => {
+    e.stopPropagation();
+    const v = sel.value, id = sel.dataset.id;
+    if (v === 'claim') doClaim(id, sel.dataset.name, sel.dataset.cat);
+    else if (v === 'start') doStart(id);
+    else if (v === 'release') doRelease(id);
+    else if (v === 'login') openLogin();
+    sel.value = ''; // snap back to the status option
   });
 }
 function openDetailRow(tr) {
   const r = ROWS[+tr.dataset.i];
   const d = document.createElement('tr');
   d.className = 'detail';
-  d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
+  d.innerHTML = '<td colspan="13" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
   tr.after(d);
   wireClaimButtons(d);
 }
@@ -478,6 +490,19 @@ function detailHtml(r) {
 }
 // --- Play ops: claim widget, geo gaps, login, claim/start/release, submit, admin ---
 function claimOf(r){ return CLAIMS[r.id] || null; }
+function rowClaimSelect(r){
+  const c = CLAIMS[r.id];
+  const status = !c ? '🟢 Available' : ((c.status === 'started' ? '🔨 ' : '🔒 ') + (c.manager_name || '?') + ' · ' + c.status);
+  let opts = '<option value="" selected>' + escq(status) + '</option>';
+  if (!ME) { if (!c) opts += '<option value="login">Sign in to claim…</option>'; }
+  else if (!c) { opts += '<option value="claim">▶ Claim for me</option>'; }
+  else {
+    const mine = c.manager_name === ME.name;
+    if (mine && c.status === 'reserved') opts += '<option value="start">✓ Mark started</option><option value="release">✕ Release</option>';
+    else if (ME.role === 'admin' && c.status === 'reserved') opts += '<option value="release">✕ Release (admin)</option>';
+  }
+  return '<select class="rc' + (c ? ' rc-claimed' : '') + '" data-id="' + escq(r.id) + '" data-name="' + escq(r.name) + '" data-cat="' + escq(r.category||'') + '">' + opts + '</select>';
+}
 function claimWidget(r){
   const c = claimOf(r);
   if (!ME) return '<div class="cw"><span class="dim">Sign in to claim / reserve this play.</span></div>';
