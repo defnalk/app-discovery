@@ -88,7 +88,7 @@ export async function buildDashboard() {
   // Nothing is dropped here: the Play score plus the incumbent / too-complex penalties
   // push non-buildable apps down, and the IA (Home top-10, Top-100, category pages)
   // keeps it digestible. Incumbents keep their pill so they stay distinguishable.
-  const rows = rollups
+  let rows = rollups
     .map((r) => {
       const app = appById.get(r.app_id);
       if (!app) return null;
@@ -153,6 +153,13 @@ export async function buildDashboard() {
   }
   rows.sort((a, b) => b!.play - a!.play);
   rows.forEach((r, i) => { r!.play_rank = i + 1; });
+
+  // play_rank is GLOBAL (over every tracked app). With 26 geos the catalog is huge
+  // (~39k), so embed only the top-N by Play score client-side to keep the page light;
+  // the tail is low-score noise. totalTracked keeps the honest headline number.
+  const totalTracked = rows.length;
+  const EMBED_CAP = Number(process.env.EMBED_CAP ?? 6000);
+  rows = rows.slice(0, EMBED_CAP);
 
   const categories = [...new Set(rows.map((r) => r!.category).filter(Boolean))].sort();
   const geos = [...new Set(rows.flatMap((r) => r!.geos))].sort();
@@ -288,11 +295,29 @@ export async function buildDashboard() {
   .gap-all summary { cursor:pointer; color:var(--dim); }
   select.rc { max-width:180px; font-size:12px; padding:3px 6px; color:var(--good); border-color:var(--line); }
   select.rc.rc-claimed { color:var(--warn); }
+  #toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:60; display:flex; flex-direction:column; gap:6px; align-items:center; }
+  .toast { padding:8px 14px; border-radius:8px; font-size:13px; border:1px solid var(--line); background:var(--panel); opacity:0; transition:opacity .2s; box-shadow:0 4px 16px rgba(0,0,0,.4); }
+  .toast.show { opacity:1; }
+  .toast.err { border-color:var(--bad); color:var(--bad); }
+  .toast.ok { border-color:var(--good); color:var(--good); }
+  .cw-timer.cw-urgent { color:var(--bad); font-weight:700; }
+  .results-badge { background:var(--warn); color:#06121f; padding:3px 8px; border-radius:6px; font-weight:600; font-size:11px; }
+  .hl-claimed { margin-left:auto; font-size:10px; color:var(--warn); flex:none; white-space:nowrap; }
+  @media (max-width:1024px){ .idea-grid,.hl-grid,#tc-grid{ grid-template-columns:repeat(2,1fr)!important; } }
+  @media (max-width:640px){
+    main{ padding:12px 12px; }
+    .tabs{ overflow-x:auto; flex-wrap:nowrap; gap:2px; }
+    .tabbtn{ padding:8px 9px; font-size:13px; white-space:nowrap; }
+    .idea-grid,.hl-grid,#tc-grid{ grid-template-columns:1fr!important; }
+    .login-card{ max-height:90vh; overflow-y:auto; }
+    .hero p{ font-size:13px; }
+    #t th:nth-child(n+6), #t td:nth-child(n+6){ display:none; } /* keep Play/App/Claim/Category/Geos on phones; full detail on tap */
+  }
 </style>
 <div class="hero">
   <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
   <div class="stats">
-    <div class="stat-chip"><b>${rows.length}</b><span>apps tracked</span></div>
+    <div class="stat-chip"><b>${totalTracked.toLocaleString()}</b><span>apps tracked · ${geos.length} geos</span></div>
     <div class="stat-chip"><b>${Math.min(100, rows.length)}</b><span>top plays · green</span></div>
     <div class="stat-chip"><b>${ideas.length}</b><span>fresh ideas</span></div>
     <div class="stat-chip"><b>${esc(latestDay)}</b><span>chart data</span></div>
@@ -313,18 +338,20 @@ export async function buildDashboard() {
 </section>
 
 <section class="tabpane" id="tab-plays">
-  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Pick a category to narrow, then filter by market. Click a row for per-geo trends &amp; the AI analysis.</p>
+  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Pick a category to narrow, then filter by market. Click a row for per-geo trends &amp; the AI analysis.${totalTracked > EMBED_CAP ? ` Top ${EMBED_CAP.toLocaleString()} of ${totalTracked.toLocaleString()} apps loaded for fast browsing.` : ''}</p>
   <div class="cat-chips" id="cat-chips">
     <button class="chip active" data-cat="">All categories</button>
     ${categories.map((c) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
   </div>
   <div class="panel filters">
     <input type="search" id="q" placeholder="Search name / developer…" style="min-width:220px">
-    <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
+    <label>Market <select id="geo"><option value="">all</option><option value="__large">★ Large markets (arbitrage)</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
     <label>Category <select id="cat"><option value="">all</option>${categories.map((c) => `<option>${esc(c)}</option>`).join('')}</select></label>
     <label>First seen <select id="seen"><option value="">any time</option><option value="7">last 7d</option><option value="30">last 30d</option><option value="90">last 90d</option></select></label>
     <label>Momentum ≥ <input type="number" id="mom" step="0.05" style="width:70px"></label>
     <label><input type="checkbox" id="gap"> geo-gap only</label>
+    <label><input type="checkbox" id="avail"> available only</label>
+    <label id="mine-lbl" style="display:none"><input type="checkbox" id="mine"> my claims</label>
     <span class="dim" id="count"></span>
   </div>
   <div class="panel" style="overflow-x:auto">
@@ -388,6 +415,8 @@ export async function buildDashboard() {
   </div>
 </div>
 
+<div id="toast"></div>
+
 <details class="panel" style="padding:10px 14px;margin-top:18px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
@@ -412,17 +441,21 @@ function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
   const seen = $('#seen').value ? Date.now() - (+$('#seen').value)*864e5 : null;
   const mom = $('#mom').value === '' ? null : +$('#mom').value;
-  const gap = $('#gap').checked;
+  const gap = $('#gap').checked, availOnly = $('#avail').checked, mineOnly = $('#mine') && $('#mine').checked;
+  const geoOk = (r) => !geo ? true : geo === '__large' ? r.geos.some(g => NET_GEOS.includes(g)) : r.geos.includes(geo);
   let rows = ROWS.filter(r =>
     (!q || r.name.toLowerCase().includes(q) || (r.developer||'').toLowerCase().includes(q)) &&
-    (!geo || r.geos.includes(geo)) && (!cat || r.category === cat) &&
+    geoOk(r) && (!cat || r.category === cat) &&
     (seen == null || new Date(r.first_seen).getTime() >= seen) &&
-    (mom == null || r.momentum >= mom) && (!gap || r.geo_gap.length));
+    (mom == null || r.momentum >= mom) && (!gap || r.geo_gap.length) &&
+    (!availOnly || !CLAIMS[r.id]) &&
+    (!mineOnly || (CLAIMS[r.id] && ME && CLAIMS[r.id].manager_name === ME.name)));
   if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   const CAP = 500;
   const shown = rows.slice(0, CAP);
-  $('#count').textContent = rows.length <= CAP ? rows.length + ' shown' : 'showing top ' + CAP + ' of ' + rows.length + ' — narrow by category or search';
+  $('#count').innerHTML = rows.length <= CAP ? (rows.length + ' shown') : '<span class="results-badge">top ' + CAP + ' of ' + rows.length + ' — narrow by category/search</span>';
+  saveFilters();
   $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + (CLAIMS[r.id] ? ' claimed' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
@@ -485,14 +518,19 @@ function detailHtml(r) {
         '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'–') + '</b> — ' + escq(r.build_note||'') + '</p>' +
         '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '–') + '</b> — ' + escq(r.sat_note||'') + '</p>'
       ) : '<p class="dim">not analyzed yet — top-momentum apps are analyzed nightly</p>') +
-      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a></p></div>' +
+      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p></div>' +
     gapsHtml(r) + '</div>';
 }
 // --- Play ops: claim widget, geo gaps, login, claim/start/release, submit, admin ---
 function claimOf(r){ return CLAIMS[r.id] || null; }
 function rowClaimSelect(r){
   const c = CLAIMS[r.id];
-  const status = !c ? '🟢 Available' : ((c.status === 'started' ? '🔨 ' : '🔒 ') + (c.manager_name || '?') + ' · ' + c.status);
+  let status;
+  if (!c) status = '🟢 Available';
+  else if (c.status === 'reserved' && c.start_by) {
+    const h = Math.floor((new Date(c.start_by).getTime() - Date.now()) / 3.6e6);
+    status = '🔒 ' + (c.manager_name || '?') + (h <= 0 ? ' · ⚠ expired' : ' · ' + h + 'h left');
+  } else status = (c.status === 'started' ? '🔨 ' : '🔒 ') + (c.manager_name || '?') + ' · ' + c.status;
   let opts = '<option value="" selected>' + escq(status) + '</option>';
   if (!ME) { if (!c) opts += '<option value="login">Sign in to claim…</option>'; }
   else if (!c) { opts += '<option value="claim">▶ Claim for me</option>'; }
@@ -535,15 +573,50 @@ function wireClaimButtons(scope){
     else if (act === 'start') doStart(id);
     else if (act === 'release') doRelease(id);
   });
+  scope.querySelectorAll('.copy-link').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(location.origin + location.pathname + '#/app/' + encodeURIComponent(b.dataset.id))
+      .then(() => toast('Link copied — share it', 'ok')).catch(() => toast('Copy failed', 'err'));
+  });
   scope.querySelectorAll('.cw-timer').forEach(el => {
     const ms = new Date(el.dataset.by).getTime() - Date.now();
-    if (ms <= 0) { el.textContent = '· start time elapsed'; return; }
+    if (ms <= 0) { el.textContent = '· ⚠ start time elapsed'; el.classList.add('cw-urgent'); return; }
     const h = Math.floor(ms/3.6e6), m = Math.floor((ms%3.6e6)/6e4);
-    el.textContent = '· start within ' + h + 'h ' + m + 'm';
+    el.textContent = '· ' + (h < 4 ? '⚠ ' : '') + 'start within ' + h + 'h ' + m + 'm';
+    if (h < 4) el.classList.add('cw-urgent');
   });
 }
-const api = (p, opts) => fetch(p, Object.assign({ credentials: 'include' }, opts||{})).then(async res => ({ ok: res.ok, status: res.status, data: await res.json().catch(()=>({})) }));
+function toast(msg, type){
+  const wrap = $('#toast'); if (!wrap) return;
+  const t = document.createElement('div'); t.className = 'toast ' + (type || 'ok'); t.textContent = msg;
+  wrap.appendChild(t); requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 250); }, 3000);
+}
+async function api(p, opts){
+  const o = Object.assign({ credentials: 'include' }, opts||{});
+  for (let attempt = 0; ; attempt++){
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(p, Object.assign({ signal: ctrl.signal }, o));
+      clearTimeout(timer);
+      return { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) };
+    } catch (e) {
+      clearTimeout(timer);
+      if (attempt >= 2) return { ok: false, status: 0, data: { error: 'network error — please retry' } };
+      await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt))); // retry transient network/cold-start
+    }
+  }
+}
 function meHint(){ try { return JSON.parse(localStorage.getItem('play_me')||'null'); } catch { return null; } }
+function saveFilters(){ try { localStorage.setItem('play_filters', JSON.stringify({ q:$('#q').value, geo:$('#geo').value, cat:$('#cat').value, seen:$('#seen').value, mom:$('#mom').value, gap:$('#gap').checked, avail:$('#avail').checked, sortKey, sortDir })); } catch(e){} }
+function loadFilters(){
+  try {
+    const f = JSON.parse(localStorage.getItem('play_filters')||'null'); if (!f) return;
+    $('#q').value=f.q||''; $('#geo').value=f.geo||''; $('#cat').value=f.cat||''; $('#seen').value=f.seen||''; $('#mom').value=f.mom||''; $('#gap').checked=!!f.gap; $('#avail').checked=!!f.avail;
+    if (f.sortKey) sortKey=f.sortKey; if (typeof f.sortDir==='number') sortDir=f.sortDir;
+    document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === (f.cat||'')));
+  } catch(e){}
+}
 function setMe(m){ ME = m; if (m) localStorage.setItem('play_me', JSON.stringify(m)); else localStorage.removeItem('play_me'); renderAuth(); }
 function renderAuth(){
   const box = $('#authbox'); if (!box) return;
@@ -551,6 +624,8 @@ function renderAuth(){
   const so = $('#signout'); if (so) so.onclick = () => { setMe(null); CLAIMS = {}; refreshAll(); };
   const si = $('#signin'); if (si) si.onclick = openLogin;
   const at = $('#admin-tab'); if (at) at.style.display = (ME && ME.role==='admin') ? '' : 'none';
+  const ml = $('#mine-lbl'); if (ml) ml.style.display = ME ? '' : 'none';
+  if (!ME && $('#mine')) $('#mine').checked = false;
 }
 function openLogin(){ $('#login-msg').textContent=''; $('#login-modal').classList.add('show'); $('#login-name').focus(); }
 function closeLogin(){ $('#login-modal').classList.remove('show'); }
@@ -575,20 +650,21 @@ async function doClaim(id, name, cat){
   if (!ME) { openLogin(); return; }
   const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  if (!r.ok) { alert((r.data && r.data.error) || 'Claim failed'); await loadState(); refreshAll(); reopenDetail(id); return; }
-  if (r.data && r.data.won === false) alert('Already claimed by ' + (r.data.claimed_by||'someone'));
+  if (!r.ok) { toast((r.data && r.data.error) || 'Claim failed', 'err'); await loadState(); refreshAll(); reopenDetail(id); return; }
+  if (r.data && r.data.won === false) toast('Already claimed by ' + (r.data.claimed_by||'someone'), 'err');
+  else toast('✓ Claimed — you have 24h to start', 'ok');
   await loadState(); refreshAll(); reopenDetail(id);  // re-sync from authoritative server state
 }
 async function doStart(id){
   const r = await api('/api/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  if (!r.ok) alert((r.data && r.data.error) || 'Start failed');
+  toast(r.ok ? '✓ Marked started' : ((r.data && r.data.error) || 'Start failed'), r.ok ? 'ok' : 'err');
   await loadState(); refreshAll(); reopenDetail(id);
 }
 async function doRelease(id){
   const r = await api('/api/release', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  if (!r.ok) alert((r.data && r.data.error) || 'Release failed');
+  toast(r.ok ? 'Released — back in the pool' : ((r.data && r.data.error) || 'Release failed'), r.ok ? 'ok' : 'err');
   await loadState(); refreshAll(); reopenDetail(id);
 }
 function reopenDetail(id){
@@ -598,16 +674,22 @@ function reopenDetail(id){
   const tr = document.querySelector('tr.approw[data-i="' + i + '"]');
   if (tr) openDetailRow(tr);
 }
-function hlCardJS(r){ return '<button class="hl-card" data-id="'+escq(r.id)+'"><span class="hl-play">'+(r.play!=null?r.play.toFixed(0):'–')+'</span><span class="hl-name">'+escq(r.name)+'</span><span class="hl-meta">'+escq(r.category||'–')+' · '+escq(r.build||'?')+'</span></button>'; }
+function hlCardJS(r){
+  const c = CLAIMS[r.id];
+  const tail = c ? '<span class="hl-claimed">claimed · '+escq(c.manager_name)+'</span>' : '<span class="hl-meta">'+escq(r.category||'–')+' · '+escq(r.build||'?')+'</span>';
+  return '<button class="hl-card" data-id="'+escq(r.id)+'"><span class="hl-play">'+(r.play!=null?r.play.toFixed(0):'–')+'</span><span class="hl-name">'+escq(r.name)+'</span>'+tail+'</button>';
+}
 function renderHome(){
   const body = $('#home-body'); if (!body) return;
   const free = ROWS.filter(r => !CLAIMS[r.id]);
   const top = free.filter(r => !r.incumbent).slice(0, 10); // ROWS already play-sorted
   const rising = [...free].sort((a,b)=> b.momentum - a.momentum).slice(0, 10);
-  const strip = (title, arr) => '<div class="panel"><div style="font-weight:600;margin-bottom:10px">'+title+'</div><div class="hl-grid">'+(arr.length?arr.map(hlCardJS).join(''):'<span class="dim">none available</span>')+'</div></div>';
+  const claimed = ROWS.filter(r => CLAIMS[r.id]).sort((a,b)=> new Date(CLAIMS[b.id].claimed_at||0) - new Date(CLAIMS[a.id].claimed_at||0)).slice(0, 12);
+  const strip = (title, arr) => '<div class="panel"><div style="font-weight:600;margin-bottom:10px">'+title+'</div><div class="hl-grid">'+(arr.length?arr.map(hlCardJS).join(''):'<span class="dim">none</span>')+'</div></div>';
   body.classList.remove('dim');
   body.innerHTML = strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
-    '<p class="muted-note">' + (ME ? 'Showing plays not yet claimed. ' : 'Sign in to claim plays. ') + '<b>Top Plays</b> has all '+ROWS.length+' apps with filters &amp; categories; <b>Idea Radar</b> has fresh concepts.</p>';
+    (claimed.length ? strip('🤝 Claimed by the team', claimed) : '') +
+    '<p class="muted-note">' + (ME ? 'Showing plays not yet claimed up top. ' : 'Sign in to claim plays. ') + '<b>Top Plays</b> has all '+ROWS.length+' apps with filters &amp; categories; <b>Idea Radar</b> has fresh concepts.</p>';
   body.querySelectorAll('.hl-card').forEach(c => c.onclick = () => { const i = ROWS.findIndex(r=>r.id===c.dataset.id); if (i>=0) openApp(i); });
 }
 function renderSubmitGate(){
@@ -665,14 +747,19 @@ function renderTopCharts() {
   ].join('');
   document.querySelectorAll('.tc-app').forEach(li => li.onclick = () => openApp(+li.dataset.i));
 }
-function openApp(i) {
-  showTab('plays');
+function openApp(i) { location.hash = '#/app/' + encodeURIComponent(ROWS[i].id); }
+function openAppById(id){
+  const i = ROWS.findIndex(r => r.id === id); if (i < 0) return;
+  ['geo','cat','seen','mom'].forEach(x => $('#' + x).value = ''); $('#gap').checked = false;
+  if ($('#avail')) $('#avail').checked = false; if ($('#mine')) $('#mine').checked = false;
   $('#q').value = ROWS[i].name;
-  ['geo','cat','seen','mom'].forEach(id => $('#' + id).value = '');
-  $('#gap').checked = false;
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === ''));
+  // activate the Plays pane directly so we don't overwrite the shareable #/app/:id hash
+  document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'plays'));
+  document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-plays'));
   render();
   const tr = document.querySelector('tr.approw[data-i="' + i + '"]');
-  if (tr) { tr.click(); tr.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  if (tr) { document.querySelectorAll('tr.detail').forEach(d => d.remove()); openDetailRow(tr); tr.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 $('#tc-geo').innerHTML = TC_GEOS.map(g => '<option value="' + g + '"' + (g === 'us' ? ' selected' : '') + '>' + flagEmoji(g) + ' ' + g.toUpperCase() + '</option>').join('');
 $('#tc-chart').innerHTML = TC_CHARTS.map(c => '<option value="' + c + '">' + (CHART_LABELS[c] || c) + '</option>').join('');
@@ -683,7 +770,13 @@ document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   sortDir = sortKey === k ? -sortDir : (k === 'name' || k === 'category' || k === 'first_seen' ? 1 : -1);
   sortKey = k; render();
 });
-['q','geo','cat','seen','mom','gap'].forEach(id => $('#'+id).addEventListener('input', render));
+let _rt;
+const debouncedRender = () => { clearTimeout(_rt); _rt = setTimeout(render, 200); };
+['q','mom'].forEach(id => $('#'+id).addEventListener('input', debouncedRender));
+['geo','cat','seen','gap','avail'].forEach(id => $('#'+id).addEventListener('input', render));
+if ($('#mine')) $('#mine').addEventListener('input', render);
+$('#avail').addEventListener('change', () => { if ($('#avail').checked && $('#mine')) $('#mine').checked = false; });
+if ($('#mine')) $('#mine').addEventListener('change', () => { if ($('#mine').checked) $('#avail').checked = false; });
 
 // Tabs — show one focused section at a time
 function showTab(t) {
@@ -720,11 +813,18 @@ if (sform) sform.onsubmit = async (e) => {
   if (r.ok) { ['sf-name','sf-cat','sf-market','sf-pitch'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
 };
 
-// Shareable hash routing (#/plays, #/category etc.)
-function routeFromHash(){ const t = (location.hash||'').replace('#/','') || 'home'; if (document.getElementById('tab-'+t)) showTab(t); }
+// Shareable hash routing: #/plays, #/admin … and deep links #/app/<id>
+function routeFromHash(){
+  const h = location.hash || '';
+  const m = h.match(/^#\\/app\\/(.+)$/);
+  if (m) { openAppById(decodeURIComponent(m[1])); return; }
+  const t = h.replace('#/','') || 'home';
+  if (document.getElementById('tab-'+t)) showTab(t);
+}
 window.addEventListener('hashchange', routeFromHash);
 
 ME = meHint();
+loadFilters();
 renderAuth();
 renderHome();
 render();
@@ -735,6 +835,13 @@ loadState().then(refreshAll);`;
   const html = pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body, script });
   const out = path.join(process.cwd(), 'public', 'index.html');
   mkdirSync(path.dirname(out), { recursive: true });
+  // Build-integrity gate: a half-failed ingest must abort the build, not silently
+  // ship a thin dashboard that then auto-deploys. Override with MIN_DASHBOARD_ROWS.
+  const top100 = rows.filter((r) => (r!.play_rank ?? 0) <= 100 && r!.play_rank > 0).length;
+  const minRows = Number(process.env.MIN_DASHBOARD_ROWS ?? 500);
+  if (rows.length < minRows || top100 < 50) {
+    throw new Error(`build gate: ${rows.length} rows / ${top100} top-plays — refusing to ship a thin dashboard (set MIN_DASHBOARD_ROWS to override)`);
+  }
   writeFileSync(out, html);
   await bundleFunctions();   // public/api/*.mjs (claim/login/admin endpoints)
   assertNoSecretLeak();      // abort if any secret value made it into the deployed bundle
