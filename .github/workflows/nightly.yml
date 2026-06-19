@@ -7,7 +7,7 @@ on:
 jobs:
   nightly:
     runs-on: ubuntu-latest
-    timeout-minutes: 120 # widened: 24 geos x 16 categories x 4 charts of keyless Apple feeds
+    timeout-minutes: 60 # successful runs take 24–32 min; fetch timeouts mean no more 2h hangs
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
@@ -16,7 +16,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # Node 24 became the forced runner default mid-June and its stricter npm
+      # started failing `npm ci`; fall back to `npm install` so deps always land.
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
       - run: npm run nightly
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
