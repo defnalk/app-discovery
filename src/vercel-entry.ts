@@ -46,9 +46,26 @@ function passwordOk(req: IncomingMessage): boolean {
 }
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
-  if (!passwordOk(req)) return unauthorized(res);
   const host = (req.headers.host as string) || 'localhost';
   const url = new URL(req.url ?? '/', `https://${host}`);
+
+  // Clay endpoints: gated by their own CLAY_WEBHOOK_TOKEN, NOT the dashboard Basic
+  // Auth (an automated tool can't do an interactive login). Fails closed.
+  //   POST /leads/clay     — Clay sends enriched contacts IN
+  //   GET  /leads/targets  — Clay imports the target company list OUT
+  if (url.pathname === '/leads/clay' || url.pathname === '/leads/targets') {
+    const token = process.env.CLAY_WEBHOOK_TOKEN;
+    const sent = (req.headers['x-clay-token'] as string) || url.searchParams.get('token') || '';
+    if (!token || sent !== token) {
+      res.writeHead(401, { 'content-type': 'application/json; charset=utf-8' });
+      res.end('{"error":"unauthorized"}');
+      return;
+    }
+    const clay = routes.get(`${req.method} ${url.pathname}`);
+    if (clay) { await clay(req, res, url); return; }
+  }
+
+  if (!passwordOk(req)) return unauthorized(res);
   const route = routes.get(`${req.method} ${url.pathname}`);
   if (!route) {
     res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });

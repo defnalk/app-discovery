@@ -42,6 +42,181 @@ async function getTiers() {
   return (config.find((c) => c.key === 'tier_thresholds')?.value as { A: number; B: number } | undefined) ?? DEFAULT_TIERS;
 }
 
+// ================================================================ Clay contact webhook
+/** Read a body that may arrive raw (stream) or already-parsed (serverless). */
+async function rawBody(req: IncomingMessage): Promise<string> {
+  const pre = (req as { body?: unknown }).body;
+  if (pre != null) return typeof pre === 'string' ? pre : JSON.stringify(pre);
+  let raw = '';
+  for await (const chunk of req) raw += chunk;
+  return raw;
+}
+const sendJson = (res: ServerResponse, status: number, obj: unknown) => {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(obj));
+};
+const domKey = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').trim();
+
+/**
+ * Inbound webhook for Clay (auth handled by the entry layer via CLAY_WEBHOOK_TOKEN).
+ * Accepts one record or an array; matches each to an existing lead by domain then
+ * company and writes the real contact (email / phone / name / title) onto it —
+ * unmatched records become new source_arm='clay' leads. This is the accurate
+ * contact source replacing the bad Apollo/CSV phone+email data.
+ */
+async function clayIngest(req: IncomingMessage, res: ServerResponse) {
+  const db = getLeadsDb();
+  let payload: unknown;
+  try { payload = JSON.parse((await rawBody(req)) || '{}'); }
+  catch { return sendJson(res, 400, { error: 'invalid JSON body' }); }
+  const records: Record<string, unknown>[] = Array.isArray(payload) ? payload as Record<string, unknown>[]
+    : Array.isArray((payload as { records?: unknown[] }).records) ? (payload as { records: Record<string, unknown>[] }).records
+    : [payload as Record<string, unknown>];
+
+  const leads = await db.listLeadsJoined();
+  const byId = new Map<string, LeadJoined>(leads.map((l) => [l.id, l]));
+  const byDomain = new Map<string, LeadJoined>();
+  const byCompany = new Map<string, LeadJoined>();
+  for (const l of leads) {
+    if (l.domain) byDomain.set(domKey(l.domain), l);
+    if (l.company) byCompany.set(l.company.toLowerCase().trim(), l);
+  }
+  const str = (v: unknown): string | null => { const s = v == null ? '' : String(v).trim(); return s || null; };
+  const now = new Date().toISOString();
+  const updates: Parameters<typeof db.updateLeadContacts>[0] = [];
+  const inserts: Parameters<typeof db.insertLeads>[0] = [];
+
+  for (const r of records) {
+    const domain = domKey(str(r.domain) ?? str(r.website) ?? str(r.company_domain) ?? '');
+    const company = str(r.company) ?? str(r.company_name) ?? str(r.organization_name);
+    const email = str(r.email)?.toLowerCase() ?? null;
+    const phone = str(r.phone) ?? str(r.mobile_phone) ?? str(r.direct_phone) ?? str(r.work_phone);
+    const name = str(r.contact_name) ?? ([str(r.first_name), str(r.last_name)].filter(Boolean).join(' ') || null);
+    const title = str(r.contact_title) ?? str(r.title) ?? str(r.job_title);
+    const linkedin = str(r.linkedin) ?? str(r.linkedin_url);
+    const lid = str(r.lead_id);
+    const match = (lid && byId.get(lid)) || (domain && byDomain.get(domain)) || (company && byCompany.get(company.toLowerCase()));
+    if (match) {
+      const rp = { ...((match.raw_payload as Record<string, unknown>) ?? {}), contact_source: 'clay', clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now };
+      updates.push({
+        id: match.id,
+        email: email ?? match.email,
+        email_status: email ? 'clay_verified' : match.email_status,
+        contact_name: name ?? match.contact_name,
+        contact_title: title ?? match.contact_title,
+        enriched_at: now,
+        raw_payload: rp,
+      });
+    } else if (company || domain) {
+      inserts.push({
+        source_arm: 'clay', company, domain: domain || null, email,
+        email_status: email ? 'clay_verified' : 'needs_lookup',
+        contact_name: name, contact_title: title, category: str(r.category), hq: str(r.hq) ?? str(r.city),
+        geo: str(r.geo), signal_source_url: null, enriched_at: email ? now : null,
+        raw_payload: { contact_source: 'clay', clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now },
+      });
+    }
+  }
+  const matched = updates.length ? await db.updateLeadContacts(updates) : 0;
+  const created = inserts.length ? await db.insertLeads(inserts) : 0;
+  log.info(`clay ingest: ${records.length} records -> ${matched} matched/updated, ${created} new`);
+  sendJson(res, 200, { ok: true, received: records.length, matched_updated: matched, new_leads: created });
+}
+
+/**
+ * Outbound TARGET LIST for Clay to import as a Source (GET). Returns the engine's
+ * consumer-app targets (no off-ICP, no duplicates) so Clay finds CONTACTS for the
+ * RIGHT companies. Token-gated by the entry layer. Clay "Result path": apps.
+ * Optional filters: ?geo=in & ?category=Education & ?limit=500.
+ * Echo lead_id back via the Clay webhook for an exact round-trip match.
+ */
+// Quality score for ranking Clay's import: verified live traction + curated source
+// (NOT the weak auto-sourced app_discovery arm) + has a contact gap to fill.
+function targetQuality(l: LeadJoined): number {
+  const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+  let s = 0;
+  if (rp.signal_verified) s += 3;                                            // real live App Store traction
+  if (l.source_arm !== 'app_discovery') s += 2;                              // curated > auto-sourced (team insight)
+  if (l.jaka_score != null) s += 1;                                          // human/LLM scored
+  if (l.domain) s += 1;
+  if (!l.email || (l.email_status ?? '').toLowerCase() === 'needs_lookup') s += 1; // a contact gap = a good Clay job
+  return s;
+}
+
+async function targetsList(_req: IncomingMessage, res: ServerResponse, url: URL) {
+  const db = getLeadsDb();
+  const geo = url.searchParams.get('geo');
+  const category = url.searchParams.get('category');
+  const limit = Number(url.searchParams.get('limit')) || 0;
+  const includeAuto = ['auto', 'all', '1'].includes(url.searchParams.get('include') ?? '');
+  const missingOnly = url.searchParams.get('missing') === '1';
+  let apps = (await db.listLeadsJoined()).filter((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    if (rp.icp_type || rp.duplicate || !(l.company || l.domain)) return false;
+    if (!includeAuto && l.source_arm === 'app_discovery') return false;        // skip weak auto-sourced by default
+    if (missingOnly && l.email && (l.email_status ?? '').toLowerCase() !== 'needs_lookup') return false;
+    return true;
+  });
+  if (geo) apps = apps.filter((l) => (l.geo ?? '').toLowerCase() === geo.toLowerCase());
+  if (category) apps = apps.filter((l) => (l.category ?? '').toLowerCase() === category.toLowerCase());
+  // best leads first, so a ?limit (trial-credit budget) spends on the highest-quality targets
+  apps.sort((a, b) => targetQuality(b) - targetQuality(a) || (Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0)));
+  const out = (limit > 0 ? apps.slice(0, limit) : apps).map((l, i) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    const sig = (rp.signal as Record<string, unknown> | undefined) ?? {};
+    return {
+      priority: i + 1,
+      quality_score: targetQuality(l),
+      lead_id: l.id,
+      company: l.company,
+      domain: l.domain,
+      category: l.category,
+      geo: l.geo,
+      source_arm: l.source_arm,
+      needs_contact: !l.email || (l.email_status ?? '').toLowerCase() === 'needs_lookup',
+      jaka_score: l.jaka_score,
+      app_name: (sig.app_name as string | undefined) ?? null,
+      chart_rank: (sig.best_rank as number | undefined) ?? null,
+      geos_charting: Array.isArray(sig.geos_live) ? (sig.geos_live as string[]).join(', ') : null,
+      geo_gap: Array.isArray(sig.geo_gap) ? (sig.geo_gap as string[]).join(', ') : null,
+      store_url: l.signal_source_url,
+    };
+  });
+  // Clay's HTTP Source imports a top-level array with zero path config when given
+  // ?format=array. Default stays a labelled object (count/ranked_by) for humans.
+  if ((url.searchParams.get('format') ?? '') === 'array') return sendJson(res, 200, out);
+  sendJson(res, 200, {
+    count: out.length,
+    ranked_by: `quality desc — verified-traction + curated first; app_discovery auto-sourced ${includeAuto ? 'included' : 'excluded'}${missingOnly ? '; contact-gap only' : ''}`,
+    apps: out,
+  });
+}
+
+// Inline CRM write: reps set a call disposition / favorite / note from the dashboard.
+// Auth = dashboard Basic Auth (the browser already holds it), same as the other pages.
+const DISPOSITIONS = new Set(['', 'no_answer', 'voicemail', 'bad_number', 'wrong_icp', 'interested', 'not_interested', 'meeting', 'contacted']);
+async function leadUpdate(req: IncomingMessage, res: ServerResponse) {
+  const db = getLeadsDb();
+  let body: Record<string, unknown>;
+  try { body = JSON.parse((await rawBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: 'invalid JSON' }); }
+  const id = typeof body.id === 'string' ? body.id : '';
+  if (!id) return sendJson(res, 400, { error: 'id required' });
+  const lead = (await db.listLeadsJoined()).find((l) => l.id === id);
+  if (!lead) return sendJson(res, 404, { error: 'not found' });
+  const rp = { ...((lead.raw_payload as Record<string, unknown>) ?? {}) };
+  if ('disposition' in body) {
+    const d = String(body.disposition ?? '');
+    if (!DISPOSITIONS.has(d)) return sendJson(res, 400, { error: 'bad disposition' });
+    if (d) rp.disposition = d; else delete rp.disposition;
+  }
+  if ('favorite' in body) rp.favorite = Boolean(body.favorite);
+  if ('note' in body) { const n = String(body.note ?? '').trim(); if (n) rp.note = n.slice(0, 1000); else delete rp.note; }
+  rp.status_updated_at = new Date().toISOString();
+  await db.updateLeadFields([{ id, raw_payload: rp }]);
+  if (typeof body.stage === 'string' && body.stage) await db.updateLeadStages(new Map([[id, body.stage]]));
+  sendJson(res, 200, { ok: true, id, disposition: rp.disposition ?? null, favorite: Boolean(rp.favorite), note: rp.note ?? null });
+}
+
 // ================================================================ Pipeline
 async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL) {
   const db = getLeadsDb();
@@ -66,6 +241,7 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
 
   const arms = [...new Set(shown.map((l) => l.source_arm))].sort();
   const geos = [...new Set(shown.map((l) => l.geo ?? 'unknown'))].sort();
+  const categories = [...new Set(shown.map((l) => l.category).filter(Boolean))].sort() as string[];
   const rows = shown.map((l) => {
     const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
     const sig = (rp.signal as Record<string, unknown> | undefined) ?? undefined;
@@ -73,6 +249,11 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
       ...l,
       tier: tierOf(l.jaka_score, tiers),
       created: fmtDate(l.created_at),
+      // Phone for the cold-call campaign: prefer the Clay-sourced number (verified),
+      // fall back to the original Apollo/CSV import number (suspect — flagged 'legacy'
+      // in the UI, since the team confirmed many of those are wrong).
+      phone: (rp.clay_phone as string | undefined) || (rp.phone as string | undefined) || null,
+      phone_src: rp.clay_phone ? 'clay' : (rp.phone ? 'legacy' : null),
       // Real provenance only: the source list/file it came from, and a verified-traction
       // timestamp when the engine actually matched it to a live app (not the old import-time
       // "enriched" stamp, which asserted an enrichment that never happened).
@@ -83,79 +264,187 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
   });
 
   const body = `
+<style>
+.chip{cursor:pointer;border:1px solid #2a3340;background:none;color:#9aa7b8;padding:3px 10px;border-radius:14px;font-size:12px}
+.chip:hover{border-color:var(--acc)} .chip.on{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}
+th.sorth{cursor:pointer;user-select:none;white-space:nowrap} th.sorth:hover{color:var(--acc)}
+td.clik{cursor:pointer} tr.leadrow:hover>td{background:#161c26}
+#t thead th{position:sticky;top:0;background:#0d1219;z-index:2}
+#stats span{white-space:nowrap}
+</style>
 ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` : ''}
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join('')}
 </div>
-<div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-  <span><b>${shown.length}</b> ${icpView === 'all' ? 'leads · all types' : 'consumer apps'}${icpView === 'consumer' && offIcpCount ? ` <span class="dim">· ${offIcpCount} non-app (incumbent / D2C / B2B) hidden</span>` : ''}</span>
-  ${icpView === 'consumer' ? '<a href="?icp=all" style="color:var(--acc)">show all types</a>' : '<a href="?icp=consumer" style="color:var(--acc)">← consumer apps only</a>'}
+<div class="panel" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
+  <div id="stats" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;align-items:center"></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    ${icpView === 'consumer'
+      ? `<a href="?icp=all" class="pill" style="color:var(--acc)">show all types (${offIcpCount} hidden)</a>`
+      : '<a href="?icp=consumer" class="pill" style="color:var(--acc)">← consumer apps only</a>'}
+    <button id="exportBtn" class="pill" style="cursor:pointer;border:1px solid var(--acc);color:var(--acc);background:none">⬇ Export CSV</button>
+  </div>
+</div>
+<div class="panel" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="dim">Quick views:</span>
+  <button class="chip" data-chip="">All</button>
+  <button class="chip" data-chip="needs_email">📵 Needs email lookup</button>
+  <button class="chip" data-chip="has_email">✉ Has email</button>
+  <button class="chip" data-chip="clay">🟢 Clay-verified</button>
+  <button class="chip" data-chip="verified">✓ Verified traction</button>
+  <button class="chip" data-chip="geogap">🌍 Geo-gap</button>
+  <span class="dim" style="border-left:1px solid #2a3340;padding-left:10px;margin-left:4px">Call status:</span>
+  <button class="chip" data-chip="favorite">★ Favorites</button>
+  <button class="chip" data-chip="uncalled">☎ Uncalled</button>
+  <button class="chip" data-chip="badnum">❌ Bad number</button>
+  <button class="chip" data-chip="interested">✅ Interested</button>
 </div>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search company / domain…" style="min-width:200px">
   <label>Arm <select id="arm"><option value="">all</option>${arms.map((a) => `<option>${esc(a)}</option>`).join('')}</select></label>
   <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join('')}</select></label>
+  <label>Category <select id="cat"><option value="">all</option>${categories.map((c) => `<option>${esc(c)}</option>`).join('')}</select></label>
   <label>Tier <select id="tier"><option value="">all</option><option>A</option><option>B</option><option>C</option></select></label>
   <label>Stage <select id="stage"><option value="">all</option>${FUNNEL_STAGES.map((s) => `<option value="${s}">${STAGE_LABELS[s]}</option>`).join('')}</select></label>
-  <label>Email <select id="estatus"><option value="">all</option><option>verified</option><option>accept_all</option><option>unverified</option></select></label>
+  <label>Email <select id="estatus"><option value="">all</option><option value="clay_verified">🟢 clay_verified</option><option>verified</option><option>unverified</option><option value="needs_lookup">needs_lookup</option><option>accept_all</option></select></label>
   <label>Added since <input type="date" id="since"></label>
   <span class="dim" id="count"></span>
 </div>
 <div class="panel" style="overflow-x:auto">
 <table id="t"><thead><tr>
-  <th data-k="company">Company</th><th>Contact</th><th data-k="email_status">Email</th>
-  <th data-k="geo">Geo</th><th data-k="category">Category</th><th data-k="source_arm">Arm</th>
-  <th data-k="jaka_score" class="num">Score ▾</th><th data-k="tier">Tier</th>
-  <th data-k="market_status">Market</th><th>Reason</th><th data-k="stage">Stage</th><th>Provenance</th>
+  <th style="width:24px"><input type="checkbox" id="selAll" title="Select all (filtered)"></th>
+  <th data-k="company" class="sorth">Company</th><th>Contact</th><th data-k="phone" class="sorth">Phone</th><th data-k="email_status" class="sorth">Email</th>
+  <th data-k="geo" class="sorth">Geo</th><th data-k="category" class="sorth">Category</th><th data-k="source_arm" class="sorth">Arm</th>
+  <th data-k="jaka_score" class="num sorth">Score</th><th data-k="tier" class="sorth">Tier</th>
+  <th data-k="market_status" class="sorth">Market</th><th>Reason</th><th data-k="stage" class="sorth">Stage</th><th>Provenance</th>
 </tr></thead><tbody></tbody></table>
-<p class="muted-note">${rows.length} leads · read-only · funnel counts materialized nightly by funnel_rollup</p>
+<p class="muted-note" id="footnote">funnel counts materialized nightly by funnel_rollup · click a column to sort · select rows to export a subset</p>
 </div>`;
 
   const script = `
 const ROWS = ${embedJson(rows)};
 const STAGE_LABELS = ${embedJson(STAGE_LABELS)};
 const $ = (s) => document.querySelector(s);
-let sortKey = 'jaka_score', sortDir = -1, stageFilter = '';
+let sortKey = 'jaka_score', sortDir = -1, chip = '';
+const selected = new Set();
 function escq(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
-function render() {
-  const q = $('#q').value.toLowerCase(), arm = $('#arm').value, geo = $('#geo').value,
-    tier = $('#tier').value, estatus = $('#estatus').value, since = $('#since').value;
-  stageFilter = $('#stage').value;
-  document.querySelectorAll('#funnel .stat').forEach(el => el.classList.toggle('active', el.dataset.stage === stageFilter));
-  let rows = ROWS.filter(r =>
-    (!q || (r.company||'').toLowerCase().includes(q) || (r.domain||'').toLowerCase().includes(q)) &&
-    (!arm || r.source_arm === arm) && (!geo || (r.geo??'unknown') === geo) &&
-    (!tier || r.tier === tier) && (!stageFilter || r.stage === stageFilter) &&
-    (!estatus || (r.email_status||'').toLowerCase() === estatus) &&
-    (!since || r.created >= since));
-  if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
-  else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
-  $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.slice(0, 500).map(r => '<tr class="leadrow" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
-    '<td><b>' + escq(r.company||'–') + '</b><br><span class="dim">' + escq(r.domain||'') + '</span></td>' +
-    '<td>' + escq(r.contact_name||'–') + '<br><span class="dim">' + escq(r.contact_title||'') + '</span></td>' +
-    '<td>' + escq(r.email||'–') + '<br><span class="pill">' + escq(r.email_status||'?') + '</span></td>' +
-    '<td>' + escq(r.geo||'–') + '</td><td>' + escq(r.category||'–') + '</td>' +
-    '<td><span class="pill">' + escq(r.source_arm) + '</span></td>' +
-    '<td class="num"><b>' + (r.jaka_score ?? '–') + '</b></td><td>' + r.tier + '</td>' +
-    '<td>' + escq(r.market_status||'–') + '</td>' +
-    '<td style="max-width:260px">' + escq((r.reason||'–').slice(0, 120)) + '</td>' +
-    '<td>' + (STAGE_LABELS[r.stage] || escq(r.stage||'raw')) + '</td>' +
-    '<td><span class="dim">src:</span> ' + escq(r.source_arm) +
-      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' · <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
-      '<br><span class="dim">' + (r.list ? 'list: ' + escq(r.list) : 'added ' + r.created) + (r.verifiedAt ? ' · ✓ verified' : '') + '</span></td></tr>').join('');
-  if (rows.length > 500) $('#count').textContent += ' (first 500 rendered)';
-  document.querySelectorAll('tr.leadrow').forEach(tr => tr.onclick = (e) => {
-    if (e.target.closest('a')) return;
-    const open = tr.nextElementSibling?.classList.contains('detail');
-    document.querySelectorAll('tr.detail').forEach(d => d.remove());
-    if (open) return;
-    const r = ROWS[+tr.dataset.i];
-    const d = document.createElement('tr');
-    d.className = 'detail';
-    d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + leadDetail(r) + '</td>';
+const rp = (r) => r.raw_payload || {};
+const needsEmail = (r) => !r.email || (r.email_status||'').toLowerCase()==='needs_lookup';
+function passesChip(r){
+  if(chip==='needs_email') return needsEmail(r);
+  if(chip==='has_email')   return !!r.email;
+  if(chip==='clay')        return rp(r).contact_source==='clay';
+  if(chip==='verified')    return !!rp(r).signal_verified;
+  if(chip==='geogap')      return !!(rp(r).signal && (rp(r).signal.geo_gap||[]).length);
+  if(chip==='favorite')    return !!rp(r).favorite;
+  if(chip==='uncalled')    return !rp(r).disposition;
+  if(chip==='badnum')      return rp(r).disposition==='bad_number';
+  if(chip==='interested')  return rp(r).disposition==='interested';
+  return true;
+}
+function filtered(){
+  const q=$('#q').value.toLowerCase(), arm=$('#arm').value, geo=$('#geo').value, cat=$('#cat').value,
+    tier=$('#tier').value, estatus=$('#estatus').value, stage=$('#stage').value, since=$('#since').value;
+  return ROWS.filter(r =>
+    (!q || (r.company||'').toLowerCase().includes(q) || (r.domain||'').toLowerCase().includes(q) || (r.contact_name||'').toLowerCase().includes(q)) &&
+    (!arm || r.source_arm===arm) && (!geo || (r.geo??'unknown')===geo) && (!cat || r.category===cat) &&
+    (!tier || r.tier===tier) && (!stage || r.stage===stage) &&
+    (!estatus || (r.email_status||'').toLowerCase()===estatus) &&
+    (!since || r.created>=since) && passesChip(r));
+}
+function statsBar(rows){
+  const withEmail=rows.filter(r=>r.email).length, need=rows.filter(needsEmail).length,
+    withPhone=rows.filter(r=>r.phone).length, clayPhone=rows.filter(r=>r.phone_src==='clay').length,
+    clay=rows.filter(r=>rp(r).contact_source==='clay').length, verif=rows.filter(r=>rp(r).signal_verified).length,
+    called=rows.filter(r=>rp(r).disposition).length, bad=rows.filter(r=>rp(r).disposition==='bad_number').length;
+  $('#stats').innerHTML = '<span><b>'+rows.length+'</b> leads</span>'+
+    '<span style="color:#9aa7b8">☎ '+withPhone+' phone'+(clayPhone?' ('+clayPhone+' Clay ✓)':'')+'</span>'+
+    '<span style="color:var(--good)">✉ '+withEmail+' email</span>'+
+    '<span style="color:var(--bad)">📵 '+need+' need lookup</span>'+
+    '<span style="color:var(--acc)">🟢 '+clay+' Clay</span>'+
+    '<span>✓ '+verif+' verified</span>'+
+    '<span style="color:#9aa7b8">☎ '+called+' worked</span>'+
+    (bad?'<span style="color:var(--bad)">❌ '+bad+' bad #</span>':'')+
+    '<span id="selcount" style="color:var(--acc)">'+(selected.size?('<b>'+selected.size+'</b> selected'):'')+'</span>';
+}
+function render(){
+  document.querySelectorAll('#funnel .stat').forEach(el=>el.classList.toggle('active', el.dataset.stage===$('#stage').value));
+  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c.dataset.chip===chip));
+  let rows=filtered();
+  if(typeof rows[0]?.[sortKey]==='string') rows.sort((a,b)=>(a[sortKey]||'').localeCompare(b[sortKey]||'')*sortDir);
+  else rows.sort((a,b)=>((a[sortKey]??-Infinity)-(b[sortKey]??-Infinity))*sortDir);
+  statsBar(rows);
+  $('#count').textContent = rows.length+' shown';
+  document.querySelectorAll('th.sorth').forEach(th=>{ th.textContent=th.textContent.replace(/ *[▾▴]$/,''); if(th.dataset.k===sortKey) th.textContent+=' '+(sortDir<0?'▾':'▴'); });
+  $('#t tbody').innerHTML = rows.slice(0,1000).map(r=>{ const i=ROWS.indexOf(r); const es=(r.email_status||'').toLowerCase();
+    const pillStyle = es==='clay_verified'?' style="background:var(--good);color:#000"':needsEmail(r)?' style="background:var(--bad);color:#fff"':'';
+    return '<tr class="leadrow" data-i="'+i+'">'+
+    '<td><input type="checkbox" class="rowsel" data-i="'+i+'"'+(selected.has(i)?' checked':'')+'></td>'+
+    '<td class="clik"><b>'+escq(r.company||'–')+'</b> <span class="dispchip">'+dispChip(r)+'</span><br><span class="dim">'+escq(r.domain||'')+'</span></td>'+
+    '<td class="clik">'+escq(r.contact_name||'–')+'<br><span class="dim">'+escq(r.contact_title||'')+'</span></td>'+
+    '<td>'+(r.phone
+      ? '<a href="tel:'+escq(r.phone)+'" style="color:var(--acc);white-space:nowrap">'+escq(r.phone)+'</a><br>'+(r.phone_src==='clay'
+          ? '<span class="pill" style="background:var(--good);color:#000">Clay ✓</span>'
+          : '<span class="pill" style="background:var(--bad);color:#fff" title="original Apollo/CSV number — unverified, may be wrong">old</span>')
+      : '<span class="dim">–</span>')+'</td>'+
+    '<td>'+escq(r.email||'–')+'<br><span class="pill"'+pillStyle+'>'+escq(r.email_status||'?')+'</span></td>'+
+    '<td>'+escq(r.geo||'–')+'</td><td>'+escq(r.category||'–')+'</td>'+
+    '<td><span class="pill">'+escq(r.source_arm)+'</span></td>'+
+    '<td class="num"><b>'+(r.jaka_score??'–')+'</b></td><td>'+r.tier+'</td>'+
+    '<td>'+escq(r.market_status||'–')+'</td>'+
+    '<td class="clik" style="max-width:240px">'+escq((r.reason||'–').slice(0,110))+'</td>'+
+    '<td>'+(STAGE_LABELS[r.stage]||escq(r.stage||'raw'))+'</td>'+
+    '<td><span class="dim">src:</span> '+escq(r.source_arm)+
+      (r.signal_source_url&&r.signal_source_url.startsWith('http')?' · <a href="'+escq(r.signal_source_url)+'" target="_blank" style="color:var(--acc)">signal</a>':'')+
+      '<br><span class="dim">'+(r.list?'list: '+escq(r.list):'added '+r.created)+(r.verifiedAt?' · ✓ verified':'')+'</span></td></tr>';
+  }).join('');
+  $('#footnote').textContent = (rows.length>1000?'showing first 1000 of '+rows.length+' — narrow with filters':rows.length+' leads')+' · click a column to sort · select rows then Export CSV';
+  $('#selAll').checked = rows.length>0 && rows.every(r=>selected.has(ROWS.indexOf(r)));
+  document.querySelectorAll('.rowsel').forEach(cb=>cb.onclick=(e)=>{ e.stopPropagation(); const i=+cb.dataset.i;
+    cb.checked?selected.add(i):selected.delete(i); $('#selcount').innerHTML = selected.size?('<b>'+selected.size+'</b> selected'):''; });
+  document.querySelectorAll('tr.leadrow .clik').forEach(td=>td.onclick=()=>{
+    const tr=td.closest('tr'); const open=tr.nextElementSibling?.classList.contains('detail');
+    document.querySelectorAll('tr.detail').forEach(d=>d.remove());
+    if(open) return;
+    const d=document.createElement('tr'); d.className='detail';
+    d.innerHTML='<td colspan="14" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
     tr.after(d);
   });
+}
+function exportCSV(){
+  const rows = selected.size ? ROWS.filter((_,i)=>selected.has(i)) : filtered();
+  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','stage','market_status','reason'];
+  const esc=v=>{ const s=(v==null?'':String(v)).replace(/"/g,'""'); return /[",\\n]/.test(s)?'"'+s+'"':s; };
+  const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='leads_export_'+rows.length+'.csv'; a.click();
+}
+const DISP = {no_answer:['No answer','#7d8694'],voicemail:['Voicemail','#7d8694'],bad_number:['❌ Bad #','#ff6b6b'],wrong_icp:['⚠ Wrong ICP','#ffb347'],interested:['✅ Interested','#3fcf8e'],not_interested:['Not interested','#7d8694'],meeting:['📅 Meeting','#3fcf8e'],contacted:['☎ Contacted','#4da3ff']};
+function dispChip(r){ const p=r.raw_payload||{}; const d=p.disposition;
+  return (p.favorite?'<span title="favorite" style="color:gold">★</span> ':'') + (d&&DISP[d]?'<span class="pill" style="background:'+DISP[d][1]+';color:#000">'+DISP[d][0]+'</span>':''); }
+async function saveLead(id, patch){
+  const r=ROWS.find(x=>x.id===id); if(!r) return;
+  let j; try{ const res=await fetch('/leads/update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({id},patch))}); j=await res.json(); }catch(e){ j={error:String(e)}; }
+  if(!j||!j.ok){ alert('Save failed: '+((j&&j.error)||'?')); return; }
+  r.raw_payload=r.raw_payload||{};
+  if('disposition' in patch){ if(patch.disposition) r.raw_payload.disposition=patch.disposition; else delete r.raw_payload.disposition; }
+  if('favorite' in patch) r.raw_payload.favorite=patch.favorite;
+  if('note' in patch){ if(patch.note) r.raw_payload.note=patch.note; else delete r.raw_payload.note; }
+  const tr=document.querySelector('tr.leadrow[data-i="'+ROWS.indexOf(r)+'"]');
+  if(tr){ const b=tr.querySelector('.dispchip'); if(b) b.innerHTML=dispChip(r);
+    const det=tr.nextElementSibling; if(det&&det.classList.contains('detail')) det.firstElementChild.innerHTML=leadDetail(r); }
+}
+function dispControls(r){ const cur=(r.raw_payload||{}).disposition||''; const fav=(r.raw_payload||{}).favorite;
+  const btn=(k)=>'<button onclick="saveLead(\\''+r.id+'\\',{disposition:\\''+(cur===k?'':k)+'\\'})" class="pill" style="cursor:pointer;margin:2px;border:1px solid '+(cur===k?DISP[k][1]:'#2a3340')+';'+(cur===k?'background:'+DISP[k][1]+';color:#000':'background:none;color:#9aa7b8')+'">'+DISP[k][0]+'</button>';
+  return '<div style="max-width:420px">'+(r.phone
+      ? '<p style="margin:0 0 8px;font-size:16px">☎ <a href="tel:'+escq(r.phone)+'" style="color:var(--acc);font-weight:700">'+escq(r.phone)+'</a> '+(r.phone_src==='clay'
+          ? '<span class="pill" style="background:var(--good);color:#000">Clay ✓</span>'
+          : '<span class="pill" style="background:var(--bad);color:#fff" title="original Apollo/CSV number — unverified, may be wrong">old / unverified</span>')+'</p>'
+      : '<p class="dim" style="margin:0 0 8px">no phone on file — needs Clay lookup</p>')+
+    '<h4 style="margin:0 0 6px">Call disposition</h4>'+Object.keys(DISP).map(btn).join('')+
+    ' <button onclick="saveLead(\\''+r.id+'\\',{favorite:'+(!fav)+'})" class="pill" style="cursor:pointer;margin:2px">'+(fav?'★ favorited':'☆ favorite')+'</button>'+
+    '<div style="margin-top:8px"><textarea id="note_'+r.id+'" rows="2" placeholder="rep note…" style="width:100%;background:#0d1219;color:#e6edf3;border:1px solid #2a3340;border-radius:6px;padding:6px">'+escq((r.raw_payload||{}).note||'')+'</textarea>'+
+    '<button onclick="saveLead(\\''+r.id+'\\',{note:document.getElementById(\\'note_'+r.id+'\\').value})" class="pill" style="cursor:pointer;color:var(--acc);margin-top:4px">Save note</button></div></div>';
 }
 function leadDetail(r) {
   const p = r.raw_payload || {};
@@ -171,6 +460,7 @@ function leadDetail(r) {
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
   return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+    dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
       (signals || '<p class="dim">no stored signals</p>') +
       '<p style="margin:8px 0 4px"><b>Classifier reason:</b> ' + escq(r.reason || 'unclassified') + '</p>' +
@@ -191,7 +481,10 @@ document.querySelectorAll('#funnel .stat').forEach(el => el.onclick = () => {
 document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : -1; sortKey = k; render();
 });
-['q','arm','geo','tier','stage','estatus','since'].forEach(id => $('#'+id).addEventListener('input', render));
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { chip = chip===c.dataset.chip ? '' : c.dataset.chip; render(); });
+$('#selAll').onclick = (e) => { filtered().forEach(r => { const i=ROWS.indexOf(r); e.target.checked ? selected.add(i) : selected.delete(i); }); render(); };
+$('#exportBtn').onclick = exportCSV;
+['q','arm','geo','cat','tier','stage','estatus','since'].forEach(id => $('#'+id).addEventListener('input', render));
 render();`;
 
   send(res, 200, pageShell({ title: 'Leads · Pipeline', active: 'pipeline', body, script }));
@@ -579,4 +872,7 @@ export function registerRoutes(routes: Map<string, Handler>) {
   routes.set('GET /leads/performance', performancePage);
   routes.set('GET /leads/settings', settingsPage);
   routes.set('POST /leads/settings/resolve', resolveSuggestionAction);
+  routes.set('POST /leads/clay', clayIngest); // Clay sends enriched contacts IN (token-gated by entry layer)
+  routes.set('GET /leads/targets', targetsList); // Clay imports the target company list OUT (token-gated)
+  routes.set('POST /leads/update', leadUpdate); // inline CRM: rep sets disposition / favorite / note
 }
