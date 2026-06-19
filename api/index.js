@@ -23915,6 +23915,39 @@ function dispControls(r){ const cur=(r.raw_payload||{}).disposition||''; const f
     '<div style="margin-top:8px"><textarea id="note_'+r.id+'" rows="2" placeholder="rep note\u2026" style="width:100%;background:#0d1219;color:#e6edf3;border:1px solid #2a3340;border-radius:6px;padding:6px">'+escq((r.raw_payload||{}).note||'')+'</textarea>'+
     '<button onclick="saveLead(\\''+r.id+'\\',{note:document.getElementById(\\'note_'+r.id+'\\').value})" class="pill" style="cursor:pointer;color:var(--acc);margin-top:4px">Save note</button></div></div>';
 }
+function talkingPoints(r){
+  const p=r.raw_payload||{}; const cat=(r.category||'consumer app');
+  const pts=[];
+  if(p.signal_verified && p.signal && p.signal.momentum_score!=null)
+    pts.push('Live traction \u2014 '+cat+' gaining momentum'+(p.signal.best_rank?(' (chart rank #'+p.signal.best_rank+')'):'')+'. Strong moment to scale paid UGC before CAC climbs.');
+  else if(p.expansion_signal)
+    pts.push('Growth signal: '+String(p.expansion_signal).slice(0,140));
+  pts.push('8x delivers creator UGC at volume \u2014 '+cat+' apps convert well with native, high-output creator ads.');
+  if(p.signal && (p.signal.geo_gap||[]).length)
+    pts.push('Geo arbitrage: live in '+(p.signal.geo_gap||[]).slice(0,3).join(', ')+'. Lower creator CPMs there stretch the same budget further.');
+  else
+    pts.push('Ask about current paid channels (Meta / TikTok) and creative fatigue \u2014 that is where 8x plugs in.');
+  return pts.slice(0,3);
+}
+function callerBrief(r){
+  const p=r.raw_payload||{}; const li=p.clay_linkedin;
+  const links=[];
+  if(r.domain) links.push('<a href="https://'+escq(r.domain)+'" target="_blank" style="color:var(--acc)">\u{1F310} '+escq(r.domain)+'</a>');
+  if(li) links.push('<a href="'+escq(li)+'" target="_blank" style="color:var(--acc)">\u{1F4BC} LinkedIn</a>');
+  const whatdo = p.why_selected || p.expansion_signal || (r.reason && r.reason!=='unclassified' ? r.reason : '');
+  return '<div style="background:#0d1722;border:1px solid var(--acc);border-radius:8px;padding:12px 16px;margin-bottom:14px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">'+
+      '<h4 style="margin:0;font-size:15px">\u{1F4CB} Caller brief \u2014 '+escq(r.company||'\u2013')+'</h4>'+
+      '<span class="dim">'+escq(r.category||'app')+' \xB7 '+escq(r.geo||'\u2013')+(r.market_status?' \xB7 '+escq(r.market_status):'')+'</span></div>'+
+    (links.length?'<p style="margin:6px 0">'+links.join(' &nbsp;\xB7&nbsp; ')+'</p>':'')+
+    '<p style="margin:6px 0"><b>Contact:</b> '+escq(r.contact_name||'\u2014')+(r.contact_title?' \xB7 '+escq(r.contact_title):'')+
+      (r.phone?' \xB7 \u260E <a href="tel:'+escq(r.phone)+'" style="color:var(--acc)">'+escq(r.phone)+'</a>'+(r.phone_src==='legacy'?' <span class="dim">(unverified #)</span>':''):' \xB7 <span class="dim">no phone</span>')+
+      (r.email?' \xB7 \u2709 '+escq(r.email):'')+'</p>'+
+    (whatdo?'<p style="margin:6px 0"><b>What they do:</b> '+escq(String(whatdo).slice(0,220))+'</p>':'')+
+    '<p style="margin:8px 0 2px"><b>Suggested 8x talking points</b></p>'+
+    '<ul style="margin:2px 0 0;padding-left:18px">'+talkingPoints(r).map(t=>'<li style="margin:2px 0">'+escq(t)+'</li>').join('')+'</ul>'+
+  '</div>';
+}
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
@@ -23928,7 +23961,8 @@ function leadDetail(r) {
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
-  return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+  return callerBrief(r) +
+    '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
     dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
       (signals || '<p class="dim">no stored signals</p>') +
