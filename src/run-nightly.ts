@@ -43,11 +43,26 @@ try {
   log.info('leads jobs not present, skipping');
 }
 
+// Hard per-job cap: even if a job hangs in a way the fetch timeout doesn't catch
+// (a stuck DB call, an unthrottled raw fetch), the race rejects and the loop moves
+// on instead of the whole run freezing until CI's 2h kill. The hung promise is
+// abandoned; process.exit at the end reaps it.
+const JOB_TIMEOUT_MS = 25 * 60 * 1000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      const t = setTimeout(() => reject(new Error(`timed out after ${ms / 60000}min`)), ms);
+      (t as { unref?: () => void }).unref?.();
+    }),
+  ]);
+}
+
 let failures = 0;
 for (const job of jobs) {
   const t0 = Date.now();
   try {
-    const result = await job.run();
+    const result = await withTimeout(job.run(), JOB_TIMEOUT_MS);
     log.info(`✓ ${job.name} (${((Date.now() - t0) / 1000).toFixed(1)}s)`, { result: result as Record<string, unknown> });
   } catch (err) {
     failures++;
