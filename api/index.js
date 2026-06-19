@@ -22757,13 +22757,14 @@ async function throttle(service, minGapMs) {
   lastCall.set(service, Date.now());
 }
 async function fetchJson(url, opts) {
-  const { service, minGapMs = 250, retries = 3, init } = opts;
+  const { service, minGapMs = 250, retries = 3, timeoutMs = 2e4, init } = opts;
   let lastErr;
   for (let attempt = 1; attempt <= retries + 1; attempt++) {
     await throttle(service, minGapMs);
     const started = Date.now();
     try {
-      const res = await fetch(url, init);
+      const signal = init?.signal ?? AbortSignal.timeout(timeoutMs);
+      const res = await fetch(url, { ...init, signal });
       log.external(service, url, { status: res.status, ms: Date.now() - started, attempt });
       if (res.status === 429 || res.status >= 500) {
         throw new Error(`HTTP ${res.status}`);
@@ -23606,26 +23607,47 @@ async function clayIngest(req, res) {
   log.info(`clay ingest: ${records.length} records -> ${matched} matched/updated, ${created} new`);
   sendJson(res, 200, { ok: true, received: records.length, matched_updated: matched, new_leads: created });
 }
+function targetQuality(l) {
+  const rp = l.raw_payload ?? {};
+  let s = 0;
+  if (rp.signal_verified) s += 3;
+  if (l.source_arm !== "app_discovery") s += 2;
+  if (l.jaka_score != null) s += 1;
+  if (l.domain) s += 1;
+  if (!l.email || (l.email_status ?? "").toLowerCase() === "needs_lookup") s += 1;
+  return s;
+}
 async function targetsList(_req, res, url) {
   const db = getLeadsDb();
   const geo = url.searchParams.get("geo");
   const category = url.searchParams.get("category");
   const limit = Number(url.searchParams.get("limit")) || 0;
+  const includeAuto = ["auto", "all", "1"].includes(url.searchParams.get("include") ?? "");
+  const missingOnly = url.searchParams.get("missing") === "1";
   let apps = (await db.listLeadsJoined()).filter((l) => {
     const rp = l.raw_payload ?? {};
-    return !rp.icp_type && !rp.duplicate && (l.company || l.domain);
+    if (rp.icp_type || rp.duplicate || !(l.company || l.domain)) return false;
+    if (!includeAuto && l.source_arm === "app_discovery") return false;
+    if (missingOnly && l.email && (l.email_status ?? "").toLowerCase() !== "needs_lookup") return false;
+    return true;
   });
   if (geo) apps = apps.filter((l) => (l.geo ?? "").toLowerCase() === geo.toLowerCase());
   if (category) apps = apps.filter((l) => (l.category ?? "").toLowerCase() === category.toLowerCase());
-  const out = (limit > 0 ? apps.slice(0, limit) : apps).map((l) => {
+  apps.sort((a, b) => targetQuality(b) - targetQuality(a) || Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
+  const out = (limit > 0 ? apps.slice(0, limit) : apps).map((l, i) => {
     const rp = l.raw_payload ?? {};
     const sig = rp.signal ?? {};
     return {
+      priority: i + 1,
+      quality_score: targetQuality(l),
       lead_id: l.id,
       company: l.company,
       domain: l.domain,
       category: l.category,
       geo: l.geo,
+      source_arm: l.source_arm,
+      needs_contact: !l.email || (l.email_status ?? "").toLowerCase() === "needs_lookup",
+      jaka_score: l.jaka_score,
       app_name: sig.app_name ?? null,
       chart_rank: sig.best_rank ?? null,
       geos_charting: Array.isArray(sig.geos_live) ? sig.geos_live.join(", ") : null,
@@ -23633,7 +23655,43 @@ async function targetsList(_req, res, url) {
       store_url: l.signal_source_url
     };
   });
-  sendJson(res, 200, { count: out.length, apps: out });
+  if ((url.searchParams.get("format") ?? "") === "array") return sendJson(res, 200, out);
+  sendJson(res, 200, {
+    count: out.length,
+    ranked_by: `quality desc \u2014 verified-traction + curated first; app_discovery auto-sourced ${includeAuto ? "included" : "excluded"}${missingOnly ? "; contact-gap only" : ""}`,
+    apps: out
+  });
+}
+var DISPOSITIONS = /* @__PURE__ */ new Set(["", "no_answer", "voicemail", "bad_number", "wrong_icp", "interested", "not_interested", "meeting", "contacted"]);
+async function leadUpdate(req, res) {
+  const db = getLeadsDb();
+  let body;
+  try {
+    body = JSON.parse(await rawBody(req) || "{}");
+  } catch {
+    return sendJson(res, 400, { error: "invalid JSON" });
+  }
+  const id = typeof body.id === "string" ? body.id : "";
+  if (!id) return sendJson(res, 400, { error: "id required" });
+  const lead = (await db.listLeadsJoined()).find((l) => l.id === id);
+  if (!lead) return sendJson(res, 404, { error: "not found" });
+  const rp = { ...lead.raw_payload ?? {} };
+  if ("disposition" in body) {
+    const d = String(body.disposition ?? "");
+    if (!DISPOSITIONS.has(d)) return sendJson(res, 400, { error: "bad disposition" });
+    if (d) rp.disposition = d;
+    else delete rp.disposition;
+  }
+  if ("favorite" in body) rp.favorite = Boolean(body.favorite);
+  if ("note" in body) {
+    const n = String(body.note ?? "").trim();
+    if (n) rp.note = n.slice(0, 1e3);
+    else delete rp.note;
+  }
+  rp.status_updated_at = (/* @__PURE__ */ new Date()).toISOString();
+  await db.updateLeadFields([{ id, raw_payload: rp }]);
+  if (typeof body.stage === "string" && body.stage) await db.updateLeadStages(/* @__PURE__ */ new Map([[id, body.stage]]));
+  sendJson(res, 200, { ok: true, id, disposition: rp.disposition ?? null, favorite: Boolean(rp.favorite), note: rp.note ?? null });
 }
 async function pipelinePage(_req, res, url) {
   const db = getLeadsDb();
@@ -23656,6 +23714,7 @@ async function pipelinePage(_req, res, url) {
   }
   const arms = [...new Set(shown.map((l) => l.source_arm))].sort();
   const geos = [...new Set(shown.map((l) => l.geo ?? "unknown"))].sort();
+  const categories = [...new Set(shown.map((l) => l.category).filter(Boolean))].sort();
   const rows = shown.map((l) => {
     const rp = l.raw_payload ?? {};
     const sig = rp.signal ?? void 0;
@@ -23663,6 +23722,11 @@ async function pipelinePage(_req, res, url) {
       ...l,
       tier: tierOf(l.jaka_score, tiers),
       created: fmtDate(l.created_at),
+      // Phone for the cold-call campaign: prefer the Clay-sourced number (verified),
+      // fall back to the original Apollo/CSV import number (suspect — flagged 'legacy'
+      // in the UI, since the team confirmed many of those are wrong).
+      phone: rp.clay_phone || rp.phone || null,
+      phone_src: rp.clay_phone ? "clay" : rp.phone ? "legacy" : null,
       // Real provenance only: the source list/file it came from, and a verified-traction
       // timestamp when the engine actually matched it to a live app (not the old import-time
       // "enriched" stamp, which asserted an enrichment that never happened).
@@ -23672,78 +23736,184 @@ async function pipelinePage(_req, res, url) {
     };
   });
   const body = `
+<style>
+.chip{cursor:pointer;border:1px solid #2a3340;background:none;color:#9aa7b8;padding:3px 10px;border-radius:14px;font-size:12px}
+.chip:hover{border-color:var(--acc)} .chip.on{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}
+th.sorth{cursor:pointer;user-select:none;white-space:nowrap} th.sorth:hover{color:var(--acc)}
+td.clik{cursor:pointer} tr.leadrow:hover>td{background:#161c26}
+#t thead th{position:sticky;top:0;background:#0d1219;z-index:2}
+#stats span{white-space:nowrap}
+</style>
 ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` : ""}
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join("")}
 </div>
-<div class="panel" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-  <span><b>${shown.length}</b> ${icpView === "all" ? "leads \xB7 all types" : "consumer apps"}${icpView === "consumer" && offIcpCount ? ` <span class="dim">\xB7 ${offIcpCount} non-app (incumbent / D2C / B2B) hidden</span>` : ""}</span>
-  ${icpView === "consumer" ? '<a href="?icp=all" style="color:var(--acc)">show all types</a>' : '<a href="?icp=consumer" style="color:var(--acc)">\u2190 consumer apps only</a>'}
+<div class="panel" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
+  <div id="stats" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;align-items:center"></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    ${icpView === "consumer" ? `<a href="?icp=all" class="pill" style="color:var(--acc)">show all types (${offIcpCount} hidden)</a>` : '<a href="?icp=consumer" class="pill" style="color:var(--acc)">\u2190 consumer apps only</a>'}
+    <button id="exportBtn" class="pill" style="cursor:pointer;border:1px solid var(--acc);color:var(--acc);background:none">\u2B07 Export CSV</button>
+  </div>
+</div>
+<div class="panel" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <span class="dim">Quick views:</span>
+  <button class="chip" data-chip="">All</button>
+  <button class="chip" data-chip="needs_email">\u{1F4F5} Needs email lookup</button>
+  <button class="chip" data-chip="has_email">\u2709 Has email</button>
+  <button class="chip" data-chip="clay">\u{1F7E2} Clay-verified</button>
+  <button class="chip" data-chip="verified">\u2713 Verified traction</button>
+  <button class="chip" data-chip="geogap">\u{1F30D} Geo-gap</button>
+  <span class="dim" style="border-left:1px solid #2a3340;padding-left:10px;margin-left:4px">Call status:</span>
+  <button class="chip" data-chip="favorite">\u2605 Favorites</button>
+  <button class="chip" data-chip="uncalled">\u260E Uncalled</button>
+  <button class="chip" data-chip="badnum">\u274C Bad number</button>
+  <button class="chip" data-chip="interested">\u2705 Interested</button>
 </div>
 <div class="panel filters">
   <input type="search" id="q" placeholder="Search company / domain\u2026" style="min-width:200px">
   <label>Arm <select id="arm"><option value="">all</option>${arms.map((a) => `<option>${esc(a)}</option>`).join("")}</select></label>
   <label>Geo <select id="geo"><option value="">all</option>${geos.map((g) => `<option>${esc(g)}</option>`).join("")}</select></label>
+  <label>Category <select id="cat"><option value="">all</option>${categories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
   <label>Tier <select id="tier"><option value="">all</option><option>A</option><option>B</option><option>C</option></select></label>
   <label>Stage <select id="stage"><option value="">all</option>${FUNNEL_STAGES.map((s) => `<option value="${s}">${STAGE_LABELS[s]}</option>`).join("")}</select></label>
-  <label>Email <select id="estatus"><option value="">all</option><option>verified</option><option>accept_all</option><option>unverified</option></select></label>
+  <label>Email <select id="estatus"><option value="">all</option><option value="clay_verified">\u{1F7E2} clay_verified</option><option>verified</option><option>unverified</option><option value="needs_lookup">needs_lookup</option><option>accept_all</option></select></label>
   <label>Added since <input type="date" id="since"></label>
   <span class="dim" id="count"></span>
 </div>
 <div class="panel" style="overflow-x:auto">
 <table id="t"><thead><tr>
-  <th data-k="company">Company</th><th>Contact</th><th data-k="email_status">Email</th>
-  <th data-k="geo">Geo</th><th data-k="category">Category</th><th data-k="source_arm">Arm</th>
-  <th data-k="jaka_score" class="num">Score \u25BE</th><th data-k="tier">Tier</th>
-  <th data-k="market_status">Market</th><th>Reason</th><th data-k="stage">Stage</th><th>Provenance</th>
+  <th style="width:24px"><input type="checkbox" id="selAll" title="Select all (filtered)"></th>
+  <th data-k="company" class="sorth">Company</th><th>Contact</th><th data-k="phone" class="sorth">Phone</th><th data-k="email_status" class="sorth">Email</th>
+  <th data-k="geo" class="sorth">Geo</th><th data-k="category" class="sorth">Category</th><th data-k="source_arm" class="sorth">Arm</th>
+  <th data-k="jaka_score" class="num sorth">Score</th><th data-k="tier" class="sorth">Tier</th>
+  <th data-k="market_status" class="sorth">Market</th><th>Reason</th><th data-k="stage" class="sorth">Stage</th><th>Provenance</th>
 </tr></thead><tbody></tbody></table>
-<p class="muted-note">${rows.length} leads \xB7 read-only \xB7 funnel counts materialized nightly by funnel_rollup</p>
+<p class="muted-note" id="footnote">funnel counts materialized nightly by funnel_rollup \xB7 click a column to sort \xB7 select rows to export a subset</p>
 </div>`;
   const script = `
 const ROWS = ${embedJson(rows)};
 const STAGE_LABELS = ${embedJson(STAGE_LABELS)};
 const $ = (s) => document.querySelector(s);
-let sortKey = 'jaka_score', sortDir = -1, stageFilter = '';
+let sortKey = 'jaka_score', sortDir = -1, chip = '';
+const selected = new Set();
 function escq(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
-function render() {
-  const q = $('#q').value.toLowerCase(), arm = $('#arm').value, geo = $('#geo').value,
-    tier = $('#tier').value, estatus = $('#estatus').value, since = $('#since').value;
-  stageFilter = $('#stage').value;
-  document.querySelectorAll('#funnel .stat').forEach(el => el.classList.toggle('active', el.dataset.stage === stageFilter));
-  let rows = ROWS.filter(r =>
-    (!q || (r.company||'').toLowerCase().includes(q) || (r.domain||'').toLowerCase().includes(q)) &&
-    (!arm || r.source_arm === arm) && (!geo || (r.geo??'unknown') === geo) &&
-    (!tier || r.tier === tier) && (!stageFilter || r.stage === stageFilter) &&
-    (!estatus || (r.email_status||'').toLowerCase() === estatus) &&
-    (!since || r.created >= since));
-  if (typeof rows[0]?.[sortKey] === 'string') rows.sort((a,b)=> (a[sortKey]||'').localeCompare(b[sortKey]||'') * sortDir);
-  else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
-  $('#count').textContent = rows.length + ' shown';
-  $('#t tbody').innerHTML = rows.slice(0, 500).map(r => '<tr class="leadrow" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
-    '<td><b>' + escq(r.company||'\u2013') + '</b><br><span class="dim">' + escq(r.domain||'') + '</span></td>' +
-    '<td>' + escq(r.contact_name||'\u2013') + '<br><span class="dim">' + escq(r.contact_title||'') + '</span></td>' +
-    '<td>' + escq(r.email||'\u2013') + '<br><span class="pill">' + escq(r.email_status||'?') + '</span></td>' +
-    '<td>' + escq(r.geo||'\u2013') + '</td><td>' + escq(r.category||'\u2013') + '</td>' +
-    '<td><span class="pill">' + escq(r.source_arm) + '</span></td>' +
-    '<td class="num"><b>' + (r.jaka_score ?? '\u2013') + '</b></td><td>' + r.tier + '</td>' +
-    '<td>' + escq(r.market_status||'\u2013') + '</td>' +
-    '<td style="max-width:260px">' + escq((r.reason||'\u2013').slice(0, 120)) + '</td>' +
-    '<td>' + (STAGE_LABELS[r.stage] || escq(r.stage||'raw')) + '</td>' +
-    '<td><span class="dim">src:</span> ' + escq(r.source_arm) +
-      (r.signal_source_url && r.signal_source_url.startsWith('http') ? ' \xB7 <a href="' + escq(r.signal_source_url) + '" target="_blank" style="color:var(--acc)">signal</a>' : '') +
-      '<br><span class="dim">' + (r.list ? 'list: ' + escq(r.list) : 'added ' + r.created) + (r.verifiedAt ? ' \xB7 \u2713 verified' : '') + '</span></td></tr>').join('');
-  if (rows.length > 500) $('#count').textContent += ' (first 500 rendered)';
-  document.querySelectorAll('tr.leadrow').forEach(tr => tr.onclick = (e) => {
-    if (e.target.closest('a')) return;
-    const open = tr.nextElementSibling?.classList.contains('detail');
-    document.querySelectorAll('tr.detail').forEach(d => d.remove());
-    if (open) return;
-    const r = ROWS[+tr.dataset.i];
-    const d = document.createElement('tr');
-    d.className = 'detail';
-    d.innerHTML = '<td colspan="12" style="background:#11161f;padding:14px 18px">' + leadDetail(r) + '</td>';
+const rp = (r) => r.raw_payload || {};
+const needsEmail = (r) => !r.email || (r.email_status||'').toLowerCase()==='needs_lookup';
+function passesChip(r){
+  if(chip==='needs_email') return needsEmail(r);
+  if(chip==='has_email')   return !!r.email;
+  if(chip==='clay')        return rp(r).contact_source==='clay';
+  if(chip==='verified')    return !!rp(r).signal_verified;
+  if(chip==='geogap')      return !!(rp(r).signal && (rp(r).signal.geo_gap||[]).length);
+  if(chip==='favorite')    return !!rp(r).favorite;
+  if(chip==='uncalled')    return !rp(r).disposition;
+  if(chip==='badnum')      return rp(r).disposition==='bad_number';
+  if(chip==='interested')  return rp(r).disposition==='interested';
+  return true;
+}
+function filtered(){
+  const q=$('#q').value.toLowerCase(), arm=$('#arm').value, geo=$('#geo').value, cat=$('#cat').value,
+    tier=$('#tier').value, estatus=$('#estatus').value, stage=$('#stage').value, since=$('#since').value;
+  return ROWS.filter(r =>
+    (!q || (r.company||'').toLowerCase().includes(q) || (r.domain||'').toLowerCase().includes(q) || (r.contact_name||'').toLowerCase().includes(q)) &&
+    (!arm || r.source_arm===arm) && (!geo || (r.geo??'unknown')===geo) && (!cat || r.category===cat) &&
+    (!tier || r.tier===tier) && (!stage || r.stage===stage) &&
+    (!estatus || (r.email_status||'').toLowerCase()===estatus) &&
+    (!since || r.created>=since) && passesChip(r));
+}
+function statsBar(rows){
+  const withEmail=rows.filter(r=>r.email).length, need=rows.filter(needsEmail).length,
+    withPhone=rows.filter(r=>r.phone).length, clayPhone=rows.filter(r=>r.phone_src==='clay').length,
+    clay=rows.filter(r=>rp(r).contact_source==='clay').length, verif=rows.filter(r=>rp(r).signal_verified).length,
+    called=rows.filter(r=>rp(r).disposition).length, bad=rows.filter(r=>rp(r).disposition==='bad_number').length;
+  $('#stats').innerHTML = '<span><b>'+rows.length+'</b> leads</span>'+
+    '<span style="color:#9aa7b8">\u260E '+withPhone+' phone'+(clayPhone?' ('+clayPhone+' Clay \u2713)':'')+'</span>'+
+    '<span style="color:var(--good)">\u2709 '+withEmail+' email</span>'+
+    '<span style="color:var(--bad)">\u{1F4F5} '+need+' need lookup</span>'+
+    '<span style="color:var(--acc)">\u{1F7E2} '+clay+' Clay</span>'+
+    '<span>\u2713 '+verif+' verified</span>'+
+    '<span style="color:#9aa7b8">\u260E '+called+' worked</span>'+
+    (bad?'<span style="color:var(--bad)">\u274C '+bad+' bad #</span>':'')+
+    '<span id="selcount" style="color:var(--acc)">'+(selected.size?('<b>'+selected.size+'</b> selected'):'')+'</span>';
+}
+function render(){
+  document.querySelectorAll('#funnel .stat').forEach(el=>el.classList.toggle('active', el.dataset.stage===$('#stage').value));
+  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c.dataset.chip===chip));
+  let rows=filtered();
+  if(typeof rows[0]?.[sortKey]==='string') rows.sort((a,b)=>(a[sortKey]||'').localeCompare(b[sortKey]||'')*sortDir);
+  else rows.sort((a,b)=>((a[sortKey]??-Infinity)-(b[sortKey]??-Infinity))*sortDir);
+  statsBar(rows);
+  $('#count').textContent = rows.length+' shown';
+  document.querySelectorAll('th.sorth').forEach(th=>{ th.textContent=th.textContent.replace(/ *[\u25BE\u25B4]$/,''); if(th.dataset.k===sortKey) th.textContent+=' '+(sortDir<0?'\u25BE':'\u25B4'); });
+  $('#t tbody').innerHTML = rows.slice(0,1000).map(r=>{ const i=ROWS.indexOf(r); const es=(r.email_status||'').toLowerCase();
+    const pillStyle = es==='clay_verified'?' style="background:var(--good);color:#000"':needsEmail(r)?' style="background:var(--bad);color:#fff"':'';
+    return '<tr class="leadrow" data-i="'+i+'">'+
+    '<td><input type="checkbox" class="rowsel" data-i="'+i+'"'+(selected.has(i)?' checked':'')+'></td>'+
+    '<td class="clik"><b>'+escq(r.company||'\u2013')+'</b> <span class="dispchip">'+dispChip(r)+'</span><br><span class="dim">'+escq(r.domain||'')+'</span></td>'+
+    '<td class="clik">'+escq(r.contact_name||'\u2013')+'<br><span class="dim">'+escq(r.contact_title||'')+'</span></td>'+
+    '<td>'+(r.phone
+      ? '<a href="tel:'+escq(r.phone)+'" style="color:var(--acc);white-space:nowrap">'+escq(r.phone)+'</a><br>'+(r.phone_src==='clay'
+          ? '<span class="pill" style="background:var(--good);color:#000">Clay \u2713</span>'
+          : '<span class="pill" style="background:var(--bad);color:#fff" title="original Apollo/CSV number \u2014 unverified, may be wrong">old</span>')
+      : '<span class="dim">\u2013</span>')+'</td>'+
+    '<td>'+escq(r.email||'\u2013')+'<br><span class="pill"'+pillStyle+'>'+escq(r.email_status||'?')+'</span></td>'+
+    '<td>'+escq(r.geo||'\u2013')+'</td><td>'+escq(r.category||'\u2013')+'</td>'+
+    '<td><span class="pill">'+escq(r.source_arm)+'</span></td>'+
+    '<td class="num"><b>'+(r.jaka_score??'\u2013')+'</b></td><td>'+r.tier+'</td>'+
+    '<td>'+escq(r.market_status||'\u2013')+'</td>'+
+    '<td class="clik" style="max-width:240px">'+escq((r.reason||'\u2013').slice(0,110))+'</td>'+
+    '<td>'+(STAGE_LABELS[r.stage]||escq(r.stage||'raw'))+'</td>'+
+    '<td><span class="dim">src:</span> '+escq(r.source_arm)+
+      (r.signal_source_url&&r.signal_source_url.startsWith('http')?' \xB7 <a href="'+escq(r.signal_source_url)+'" target="_blank" style="color:var(--acc)">signal</a>':'')+
+      '<br><span class="dim">'+(r.list?'list: '+escq(r.list):'added '+r.created)+(r.verifiedAt?' \xB7 \u2713 verified':'')+'</span></td></tr>';
+  }).join('');
+  $('#footnote').textContent = (rows.length>1000?'showing first 1000 of '+rows.length+' \u2014 narrow with filters':rows.length+' leads')+' \xB7 click a column to sort \xB7 select rows then Export CSV';
+  $('#selAll').checked = rows.length>0 && rows.every(r=>selected.has(ROWS.indexOf(r)));
+  document.querySelectorAll('.rowsel').forEach(cb=>cb.onclick=(e)=>{ e.stopPropagation(); const i=+cb.dataset.i;
+    cb.checked?selected.add(i):selected.delete(i); $('#selcount').innerHTML = selected.size?('<b>'+selected.size+'</b> selected'):''; });
+  document.querySelectorAll('tr.leadrow .clik').forEach(td=>td.onclick=()=>{
+    const tr=td.closest('tr'); const open=tr.nextElementSibling?.classList.contains('detail');
+    document.querySelectorAll('tr.detail').forEach(d=>d.remove());
+    if(open) return;
+    const d=document.createElement('tr'); d.className='detail';
+    d.innerHTML='<td colspan="14" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
     tr.after(d);
   });
+}
+function exportCSV(){
+  const rows = selected.size ? ROWS.filter((_,i)=>selected.has(i)) : filtered();
+  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','stage','market_status','reason'];
+  const esc=v=>{ const s=(v==null?'':String(v)).replace(/"/g,'""'); return /[",\\n]/.test(s)?'"'+s+'"':s; };
+  const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='leads_export_'+rows.length+'.csv'; a.click();
+}
+const DISP = {no_answer:['No answer','#7d8694'],voicemail:['Voicemail','#7d8694'],bad_number:['\u274C Bad #','#ff6b6b'],wrong_icp:['\u26A0 Wrong ICP','#ffb347'],interested:['\u2705 Interested','#3fcf8e'],not_interested:['Not interested','#7d8694'],meeting:['\u{1F4C5} Meeting','#3fcf8e'],contacted:['\u260E Contacted','#4da3ff']};
+function dispChip(r){ const p=r.raw_payload||{}; const d=p.disposition;
+  return (p.favorite?'<span title="favorite" style="color:gold">\u2605</span> ':'') + (d&&DISP[d]?'<span class="pill" style="background:'+DISP[d][1]+';color:#000">'+DISP[d][0]+'</span>':''); }
+async function saveLead(id, patch){
+  const r=ROWS.find(x=>x.id===id); if(!r) return;
+  let j; try{ const res=await fetch('/leads/update',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({id},patch))}); j=await res.json(); }catch(e){ j={error:String(e)}; }
+  if(!j||!j.ok){ alert('Save failed: '+((j&&j.error)||'?')); return; }
+  r.raw_payload=r.raw_payload||{};
+  if('disposition' in patch){ if(patch.disposition) r.raw_payload.disposition=patch.disposition; else delete r.raw_payload.disposition; }
+  if('favorite' in patch) r.raw_payload.favorite=patch.favorite;
+  if('note' in patch){ if(patch.note) r.raw_payload.note=patch.note; else delete r.raw_payload.note; }
+  const tr=document.querySelector('tr.leadrow[data-i="'+ROWS.indexOf(r)+'"]');
+  if(tr){ const b=tr.querySelector('.dispchip'); if(b) b.innerHTML=dispChip(r);
+    const det=tr.nextElementSibling; if(det&&det.classList.contains('detail')) det.firstElementChild.innerHTML=leadDetail(r); }
+}
+function dispControls(r){ const cur=(r.raw_payload||{}).disposition||''; const fav=(r.raw_payload||{}).favorite;
+  const btn=(k)=>'<button onclick="saveLead(\\''+r.id+'\\',{disposition:\\''+(cur===k?'':k)+'\\'})" class="pill" style="cursor:pointer;margin:2px;border:1px solid '+(cur===k?DISP[k][1]:'#2a3340')+';'+(cur===k?'background:'+DISP[k][1]+';color:#000':'background:none;color:#9aa7b8')+'">'+DISP[k][0]+'</button>';
+  return '<div style="max-width:420px">'+(r.phone
+      ? '<p style="margin:0 0 8px;font-size:16px">\u260E <a href="tel:'+escq(r.phone)+'" style="color:var(--acc);font-weight:700">'+escq(r.phone)+'</a> '+(r.phone_src==='clay'
+          ? '<span class="pill" style="background:var(--good);color:#000">Clay \u2713</span>'
+          : '<span class="pill" style="background:var(--bad);color:#fff" title="original Apollo/CSV number \u2014 unverified, may be wrong">old / unverified</span>')+'</p>'
+      : '<p class="dim" style="margin:0 0 8px">no phone on file \u2014 needs Clay lookup</p>')+
+    '<h4 style="margin:0 0 6px">Call disposition</h4>'+Object.keys(DISP).map(btn).join('')+
+    ' <button onclick="saveLead(\\''+r.id+'\\',{favorite:'+(!fav)+'})" class="pill" style="cursor:pointer;margin:2px">'+(fav?'\u2605 favorited':'\u2606 favorite')+'</button>'+
+    '<div style="margin-top:8px"><textarea id="note_'+r.id+'" rows="2" placeholder="rep note\u2026" style="width:100%;background:#0d1219;color:#e6edf3;border:1px solid #2a3340;border-radius:6px;padding:6px">'+escq((r.raw_payload||{}).note||'')+'</textarea>'+
+    '<button onclick="saveLead(\\''+r.id+'\\',{note:document.getElementById(\\'note_'+r.id+'\\').value})" class="pill" style="cursor:pointer;color:var(--acc);margin-top:4px">Save note</button></div></div>';
 }
 function leadDetail(r) {
   const p = r.raw_payload || {};
@@ -23759,6 +23929,7 @@ function leadDetail(r) {
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
   return '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+    dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
       (signals || '<p class="dim">no stored signals</p>') +
       '<p style="margin:8px 0 4px"><b>Classifier reason:</b> ' + escq(r.reason || 'unclassified') + '</p>' +
@@ -23779,7 +23950,10 @@ document.querySelectorAll('#funnel .stat').forEach(el => el.onclick = () => {
 document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
   const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : -1; sortKey = k; render();
 });
-['q','arm','geo','tier','stage','estatus','since'].forEach(id => $('#'+id).addEventListener('input', render));
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { chip = chip===c.dataset.chip ? '' : c.dataset.chip; render(); });
+$('#selAll').onclick = (e) => { filtered().forEach(r => { const i=ROWS.indexOf(r); e.target.checked ? selected.add(i) : selected.delete(i); }); render(); };
+$('#exportBtn').onclick = exportCSV;
+['q','arm','geo','cat','tier','stage','estatus','since'].forEach(id => $('#'+id).addEventListener('input', render));
 render();`;
   send(res, 200, pageShell({ title: "Leads \xB7 Pipeline", active: "pipeline", body, script }));
 }
@@ -24126,6 +24300,7 @@ function registerRoutes(routes2) {
   routes2.set("POST /leads/settings/resolve", resolveSuggestionAction);
   routes2.set("POST /leads/clay", clayIngest);
   routes2.set("GET /leads/targets", targetsList);
+  routes2.set("POST /leads/update", leadUpdate);
 }
 
 // src/vercel-entry.ts

@@ -107,6 +107,9 @@ export interface LeadsDb {
   listLeadsJoined(): Promise<LeadJoined[]>;
   updateLeadStages(stages: Map<string, string>): Promise<void>;
   updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]): Promise<number>;
+  updateLeadContacts(rows: { id: string; email: string | null; email_status: string | null; contact_name: string | null; contact_title: string | null; enriched_at: string | null; raw_payload: Record<string, unknown> | null }[]): Promise<number>;
+  /** Patch core lead fields (data cleanup: company/category/contact_name/raw_payload). Only provided keys are written. */
+  updateLeadFields(rows: { id: string; company?: string | null; category?: string | null; contact_name?: string | null; raw_payload?: Record<string, unknown> | null }[]): Promise<number>;
   replaceFunnelRollups(rows: FunnelRow[]): Promise<void>;
   getFunnelRollups(): Promise<FunnelRow[]>;
   listCampaigns(status?: string): Promise<CampaignRow[]>;
@@ -201,6 +204,29 @@ class SupabaseLeadsDb implements LeadsDb {
   async updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]) {
     for (const r of rows) {
       await this.must(this.sb.from('leads').update({ signal_source_url: r.signal_source_url, raw_payload: r.raw_payload }).eq('id', r.id));
+    }
+    return rows.length;
+  }
+
+  /** Apply enriched contact data (e.g. from Clay) onto existing leads. */
+  async updateLeadContacts(rows: { id: string; email: string | null; email_status: string | null; contact_name: string | null; contact_title: string | null; enriched_at: string | null; raw_payload: Record<string, unknown> | null }[]) {
+    for (const r of rows) {
+      await this.must(this.sb.from('leads').update({
+        email: r.email, email_status: r.email_status, contact_name: r.contact_name,
+        contact_title: r.contact_title, enriched_at: r.enriched_at, raw_payload: r.raw_payload,
+      }).eq('id', r.id));
+    }
+    return rows.length;
+  }
+
+  async updateLeadFields(rows: { id: string; company?: string | null; category?: string | null; contact_name?: string | null; raw_payload?: Record<string, unknown> | null }[]) {
+    for (const r of rows) {
+      const patch: Record<string, unknown> = {};
+      if ('company' in r) patch.company = r.company;
+      if ('category' in r) patch.category = r.category;
+      if ('contact_name' in r) patch.contact_name = r.contact_name;
+      if ('raw_payload' in r) patch.raw_payload = r.raw_payload;
+      if (Object.keys(patch).length) await this.must(this.sb.from('leads').update(patch).eq('id', r.id));
     }
     return rows.length;
   }
@@ -383,6 +409,29 @@ class LocalLeadsDb implements LeadsDb {
   async updateLeadSignals(rows: { id: string; signal_source_url: string | null; raw_payload: Record<string, unknown> | null }[]) {
     const byId = new Map(rows.map((r) => [r.id, r]));
     for (const l of this.d.leads) { const r = byId.get(l.id); if (r) { (l as Record<string, unknown>).signal_source_url = r.signal_source_url; (l as Record<string, unknown>).raw_payload = r.raw_payload; } }
+    this.save();
+    return rows.length;
+  }
+  async updateLeadContacts(rows: { id: string; email: string | null; email_status: string | null; contact_name: string | null; contact_title: string | null; enriched_at: string | null; raw_payload: Record<string, unknown> | null }[]) {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const l of this.d.leads) {
+      const r = byId.get(l.id);
+      if (r) Object.assign(l as Record<string, unknown>, { email: r.email, email_status: r.email_status, contact_name: r.contact_name, contact_title: r.contact_title, enriched_at: r.enriched_at, raw_payload: r.raw_payload });
+    }
+    this.save();
+    return rows.length;
+  }
+  async updateLeadFields(rows: { id: string; company?: string | null; category?: string | null; contact_name?: string | null; raw_payload?: Record<string, unknown> | null }[]) {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const l of this.d.leads) {
+      const r = byId.get(l.id);
+      if (!r) continue;
+      const o = l as Record<string, unknown>;
+      if ('company' in r) o.company = r.company;
+      if ('category' in r) o.category = r.category;
+      if ('contact_name' in r) o.contact_name = r.contact_name;
+      if ('raw_payload' in r) o.raw_payload = r.raw_payload;
+    }
     this.save();
     return rows.length;
   }
