@@ -56,7 +56,9 @@ export function domainFromUrl(url: string | undefined): string | null {
 //      budget is spent, leaving headroom for the write under the watchdog.
 //   2. The write at the end ALWAYS runs with whatever was gathered — chart
 //      ranks are never held hostage to optional enrichment.
-const GATHER_BUDGET_MS = 30 * 60 * 1000;
+// Phases run RSS -> lookup -> AI-search so the enrichment budget goes to apps
+// that are actually charting before the speculative new-app search.
+const GATHER_BUDGET_MS = 27 * 60 * 1000;
 
 export async function runAppleIngest() {
   const store = getStore();
@@ -104,7 +106,34 @@ export async function runAppleIngest() {
     log.info(`apple rss ${geo}: ${perGeo.size} unique charting apps`);
   }
 
+  // Canonical metadata via ONE global lookup over the union of every charted id
+  // (US storefront). The lookup endpoint returns canonical metadata for any app
+  // id regardless of the country param, so a single pass covers apps that chart
+  // only outside the US too — at ~1/26th the cost of the old per-geo loop that
+  // blew the watchdog. Ratings are US-canonical for every geo (the per-storefront
+  // nuance isn't worth ~60min; a consistent source is actually better for the
+  // rating-growth signal scoring derives from snapshots over time).
+  const canonical = new Map<string, LookupResult>(); // id -> result
+  const allIds = new Set<string>();
+  for (const geo of COUNTRIES) for (const id of charted.get(geo)!.keys()) allIds.add(id);
+  const idList = [...allIds];
+  let lookupTruncated = false;
+  for (let i = 0; i < idList.length; i += 100) {
+    if (overBudget()) { lookupTruncated = true; log.warn(`apple lookup: gather budget spent at ${i}/${idList.length}`); break; }
+    const batch = idList.slice(i, i + 100);
+    const url = `https://itunes.apple.com/lookup?id=${batch.join(',')}&country=us&entity=software`;
+    try {
+      const json = await fetchJson<{ results: LookupResult[] }>(url, { service: 'itunes-lookup', minGapMs: 2500 });
+      for (const r of json.results ?? []) canonical.set(String(r.trackId), r);
+    } catch (err) {
+      log.error(`itunes lookup failed: batch ${i}`, { err: String(err) });
+    }
+  }
+  log.info(`apple lookup: ${canonical.size}/${idList.length} ids enriched${lookupTruncated ? ' (truncated)' : ''}`);
+
   // New AI apps via iTunes Search — surfaces recent releases before they chart.
+  // Runs LAST (best-effort): only consumes whatever budget remains after the
+  // charting apps above are enriched.
   const cutoff = Date.now() - AI_SEARCH_MAX_AGE_DAYS * 86_400_000;
   let aiFound = 0;
   for (const geo of COUNTRIES) {
@@ -130,31 +159,6 @@ export async function runAppleIngest() {
     }
   }
   log.info(`apple ai-search: ${aiFound} recent AI app hits across geos`);
-
-  // Canonical metadata via ONE global lookup over the union of every charted id
-  // (US storefront). The lookup endpoint returns canonical metadata for any app
-  // id regardless of the country param, so a single pass covers apps that chart
-  // only outside the US too — at ~1/26th the cost of the old per-geo loop that
-  // blew the watchdog. Ratings are US-canonical for every geo (the per-storefront
-  // nuance isn't worth ~60min; a consistent source is actually better for the
-  // rating-growth signal scoring derives from snapshots over time).
-  const canonical = new Map<string, LookupResult>(); // id -> result
-  const allIds = new Set<string>();
-  for (const geo of COUNTRIES) for (const id of charted.get(geo)!.keys()) allIds.add(id);
-  const idList = [...allIds];
-  let lookupTruncated = false;
-  for (let i = 0; i < idList.length; i += 100) {
-    if (overBudget()) { lookupTruncated = true; log.warn(`apple lookup: gather budget spent at ${i}/${idList.length}`); break; }
-    const batch = idList.slice(i, i + 100);
-    const url = `https://itunes.apple.com/lookup?id=${batch.join(',')}&country=us&entity=software`;
-    try {
-      const json = await fetchJson<{ results: LookupResult[] }>(url, { service: 'itunes-lookup', minGapMs: 2500 });
-      for (const r of json.results ?? []) canonical.set(String(r.trackId), r);
-    } catch (err) {
-      log.error(`itunes lookup failed: batch ${i}`, { err: String(err) });
-    }
-  }
-  log.info(`apple lookup: ${canonical.size}/${idList.length} ids enriched${lookupTruncated ? ' (truncated)' : ''}`);
 
   // Upsert apps. Canonical lookup is the source of truth; fall back to RSS data.
   const appPayloads = new Map<string, Parameters<typeof store.upsertApps>[0][number]>();
