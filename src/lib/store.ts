@@ -183,34 +183,28 @@ class SupabaseStore implements Store {
     const now = new Date().toISOString();
     for (const batch of chunks(rows)) {
       const keys = batch.map((r) => r.store_id);
-      const existing = await this.must<Pick<AppRow, 'id' | 'store_id' | 'store'>[]>(
-        this.sb.from('apps').select('id, store_id, store').in('store_id', keys),
+      // Fetch first_seen_at/status so the upsert can write them back unchanged —
+      // a single batched upsert (insert + update in one call) replaces what used
+      // to be one sequential UPDATE round-trip per existing app. At ~35k apps the
+      // old per-row loop couldn't finish inside the nightly watchdog and the
+      // snapshot write never happened; this is ~1 round-trip per 500 apps.
+      const existing = await this.must<Pick<AppRow, 'id' | 'store_id' | 'store' | 'first_seen_at' | 'status'>[]>(
+        this.sb.from('apps').select('id, store_id, store, first_seen_at, status').in('store_id', keys),
       );
-      const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e.id]));
-      const inserts = [];
-      for (const r of batch) {
-        const k = `${r.store}:${r.store_id}`;
-        if (have.has(k)) ids.set(k, have.get(k)!);
-        else inserts.push({ ...r, first_seen_at: now, last_seen_at: now });
-      }
-      if (inserts.length) {
-        const created = await this.must<Pick<AppRow, 'id' | 'store_id' | 'store'>[]>(
-          this.sb.from('apps').upsert(inserts, { onConflict: 'store_id,store' }).select('id, store_id, store'),
-        );
-        for (const c of created) ids.set(`${c.store}:${c.store_id}`, c.id);
-      }
-      // refresh mutable fields + last_seen_at on existing rows
-      for (const r of batch) {
-        const k = `${r.store}:${r.store_id}`;
-        if (have.has(k)) {
-          await this.must(
-            this.sb.from('apps').update({
-              name: r.name, developer_name: r.developer_name, developer_domain: r.developer_domain,
-              category: r.category, description: r.description, last_seen_at: now,
-            }).eq('id', have.get(k)!),
-          );
-        }
-      }
+      const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e]));
+      const payload = batch.map((r) => {
+        const ex = have.get(`${r.store}:${r.store_id}`);
+        return {
+          ...r,
+          first_seen_at: ex?.first_seen_at ?? now, // preserve original on update
+          last_seen_at: now,
+          status: ex?.status ?? 'active',          // don't clobber too_complex etc.
+        };
+      });
+      const upserted = await this.must<Pick<AppRow, 'id' | 'store_id' | 'store'>[]>(
+        this.sb.from('apps').upsert(payload, { onConflict: 'store_id,store' }).select('id, store_id, store'),
+      );
+      for (const c of upserted) ids.set(`${c.store}:${c.store_id}`, c.id);
     }
     return ids;
   }
