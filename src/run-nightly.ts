@@ -47,7 +47,10 @@ try {
 // (a stuck DB call, an unthrottled raw fetch), the race rejects and the loop moves
 // on instead of the whole run freezing until CI's 2h kill. The hung promise is
 // abandoned; process.exit at the end reaps it.
-const JOB_TIMEOUT_MS = 25 * 60 * 1000;
+// 35min (under CI's 60min job timeout) gives the Apple ingest room to finish its
+// ~30min gather budget + DB write; it self-limits via GATHER_BUDGET_MS so this is
+// only a backstop, not the normal stopping point.
+const JOB_TIMEOUT_MS = 35 * 60 * 1000;
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     p,
