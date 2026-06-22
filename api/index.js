@@ -22797,6 +22797,43 @@ function headers() {
   if (!key) throw new Error("INSTANTLY_API_KEY not set");
   return { authorization: `Bearer ${key}`, "content-type": "application/json" };
 }
+async function listCampaigns(limit = 100) {
+  const out = [];
+  let startingAfter;
+  for (let page = 0; page < 50; page++) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (startingAfter) qs.set("starting_after", startingAfter);
+    const res = await fetchJson(
+      `${BASE}/campaigns?${qs}`,
+      { service: "instantly", minGapMs: 600, init: { headers: headers() } }
+    );
+    out.push(...res.items ?? []);
+    if (!res.next_starting_after || !res.items?.length) break;
+    startingAfter = res.next_starting_after;
+  }
+  return out;
+}
+async function campaignAnalyticsByIds(ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 25) {
+    const qs = ids.slice(i, i + 25).map((id) => `ids=${encodeURIComponent(id)}`).join("&");
+    const res = await fetchJson(
+      `${BASE}/campaigns/analytics?${qs}`,
+      { service: "instantly", minGapMs: 600, init: { headers: headers() } }
+    );
+    if (Array.isArray(res)) out.push(...res);
+    else if (res) out.push(res);
+  }
+  return out;
+}
+async function dailyAnalytics(startDate, endDate) {
+  const qs = new URLSearchParams({ start_date: startDate, end_date: endDate });
+  const res = await fetchJson(
+    `${BASE}/campaigns/analytics/daily?${qs}`,
+    { service: "instantly", minGapMs: 600, init: { headers: headers() } }
+  );
+  return Array.isArray(res) ? res : [];
+}
 async function pushLead(campaignId, lead) {
   return fetchJson(`${BASE}/leads`, {
     service: "instantly",
@@ -22872,36 +22909,24 @@ var init_store = __esm({
         for (const batch of chunks(rows)) {
           const keys = batch.map((r) => r.store_id);
           const existing = await this.must(
-            this.sb.from("apps").select("id, store_id, store").in("store_id", keys)
+            this.sb.from("apps").select("id, store_id, store, first_seen_at, status").in("store_id", keys)
           );
-          const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e.id]));
-          const inserts = [];
-          for (const r of batch) {
-            const k = `${r.store}:${r.store_id}`;
-            if (have.has(k)) ids.set(k, have.get(k));
-            else inserts.push({ ...r, first_seen_at: now, last_seen_at: now });
-          }
-          if (inserts.length) {
-            const created = await this.must(
-              this.sb.from("apps").upsert(inserts, { onConflict: "store_id,store" }).select("id, store_id, store")
-            );
-            for (const c of created) ids.set(`${c.store}:${c.store_id}`, c.id);
-          }
-          for (const r of batch) {
-            const k = `${r.store}:${r.store_id}`;
-            if (have.has(k)) {
-              await this.must(
-                this.sb.from("apps").update({
-                  name: r.name,
-                  developer_name: r.developer_name,
-                  developer_domain: r.developer_domain,
-                  category: r.category,
-                  description: r.description,
-                  last_seen_at: now
-                }).eq("id", have.get(k))
-              );
-            }
-          }
+          const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e]));
+          const payload = batch.map((r) => {
+            const ex = have.get(`${r.store}:${r.store_id}`);
+            return {
+              ...r,
+              first_seen_at: ex?.first_seen_at ?? now,
+              // preserve original on update
+              last_seen_at: now,
+              status: ex?.status ?? "active"
+              // don't clobber too_complex etc.
+            };
+          });
+          const upserted = await this.must(
+            this.sb.from("apps").upsert(payload, { onConflict: "store_id,store" }).select("id, store_id, store")
+          );
+          for (const c of upserted) ids.set(`${c.store}:${c.store_id}`, c.id);
         }
         return ids;
       }
@@ -23327,7 +23352,7 @@ var init_config = __esm({
 // src/leads/cull-non-apps.ts
 function classify(l) {
   const name = (l.company ?? "").toLowerCase();
-  if (INCUMBENT_BRANDS.some((b) => name.includes(b)) || KNOWN_MAJORS.some((m) => name.includes(m))) return "incumbent";
+  if (INCUMBENT_BRANDS.some((b) => name.includes(b)) || KNOWN_MAJORS.some((m) => name.includes(m)) || MEGA_RE.test(name)) return "incumbent";
   const text = `${name} ${(l.category ?? "").toLowerCase()}`;
   if (l.raw_payload?.signal_verified) return "consumer_app";
   if (NON_APP.test(text)) return "d2c_or_b2b";
@@ -23338,10 +23363,12 @@ async function runCull() {
   const leads = await db.listLeadsJoined();
   const updates = [];
   const tally = { incumbent: 0, d2c_or_b2b: 0, consumer_app: 0 };
+  const newlyIncumbent = [];
   for (const l of leads) {
     const c = classify(l);
     tally[c]++;
     const rp = l.raw_payload ?? {};
+    if (c === "incumbent" && rp.icp_type !== "incumbent") newlyIncumbent.push(l.company ?? "(no name)");
     const want = c === "consumer_app" ? void 0 : c;
     if (rp.icp_type !== want) {
       const next = { ...rp };
@@ -23351,6 +23378,7 @@ async function runCull() {
     }
   }
   log.info(`cull: ${leads.length} leads -> ${tally.consumer_app} consumer apps \xB7 ${tally.incumbent} incumbents + ${tally.d2c_or_b2b} D2C/B2B tagged off-ICP`);
+  if (newlyIncumbent.length) log.info(`cull: ${newlyIncumbent.length} NEWLY excluded as incumbent: ${newlyIncumbent.sort().join(", ")}`);
   if (DRY_RUN) {
     log.info("cull: DRY RUN, nothing written");
     return { consumer_apps: tally.consumer_app, tagged: updates.length, ...tally };
@@ -23359,7 +23387,7 @@ async function runCull() {
   log.info(`cull: tagged ${written} leads off-ICP (non-destructive)`);
   return { consumer_apps: tally.consumer_app, tagged: written, ...tally };
 }
-var DRY_RUN, INCUMBENT_BRANDS, NON_APP;
+var DRY_RUN, INCUMBENT_BRANDS, MEGA_APPS, MEGA_RE, NON_APP;
 var init_cull_non_apps = __esm({
   async "src/leads/cull-non-apps.ts"() {
     "use strict";
@@ -23402,6 +23430,42 @@ var init_cull_non_apps = __esm({
       "mastercard",
       "visa inc"
     ];
+    MEGA_APPS = [
+      "snapchat",
+      "reddit",
+      "linkedin",
+      "discord",
+      "twitch",
+      "coinbase",
+      "robinhood",
+      "doordash",
+      "instacart",
+      "lyft",
+      "shopify",
+      "dropbox",
+      "wise",
+      "klarna",
+      "line corp",
+      "kakao",
+      "wechat",
+      "baidu",
+      "jd.com",
+      "pinduoduo",
+      "grindr",
+      "match group",
+      "ebay",
+      "etsy",
+      "zynga",
+      "niantic",
+      "mercadolibre",
+      "mercado libre",
+      "sea limited",
+      "garena",
+      "expedia",
+      "zillow",
+      "whatsapp"
+    ];
+    MEGA_RE = new RegExp("\\b(" + MEGA_APPS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")\\b", "i");
     NON_APP = /beaut|cosmetic|skincare|makeup|fragrance|perfume|apparel|fashion|footwear|jewel|clothing|textile|athleisure|activewear|food and beverage|food & beverage|beverage|grocery|nutrition|supplement|vitamin|personal care|consumer goods|consumer packaged|cpg|fmcg|furniture|home goods|mattress|wholesale|distributor|manufactur|information technology|& services|and services|staffing|recruit|consulting|real estate|automotive|logistics|hospitality|construction|\binsurance\b|\bbank\b|financial services|winery|brewery|spirits/i;
     if (import.meta.url === `file://${process.argv[1]}`) {
       await runCull();
@@ -23432,6 +23496,7 @@ var NAV = [
   { key: "apps", label: "Apps", href: "/" },
   { key: "pipeline", label: "Pipeline", href: "/leads" },
   { key: "approvals", label: "Approval Queue", href: "/leads/approvals" },
+  { key: "campaigns", label: "Campaigns", href: "/leads/campaigns" },
   { key: "performance", label: "Performance", href: "/leads/performance" },
   { key: "strategy", label: "Strategy", href: "/leads/strategy" },
   { key: "settings", label: "Settings", href: "/leads/settings" }
@@ -23463,6 +23528,7 @@ function pageShell(opts) {
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; }
+  th.sorth:hover { color:var(--acc); }
   tr:hover td { background:#1a2130; }
   input[type=text], input[type=search], select, input[type=number], input[type=date] {
     background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px; }
@@ -23499,6 +23565,79 @@ init_log();
 init_db();
 await init_jobs();
 init_instantly();
+
+// src/leads/cpm-map.ts
+var PAID_CPM_BY_GEO = {
+  us: { usd: 16, src: "Statista / Lebesgue Meta CPM 2025 (~$16; AdAmigo $20.5)" },
+  br: { usd: 4.2, src: "Lebesgue / AdAmigo 2025 ($2.6\u20134.2)" },
+  mx: { usd: 3.92, src: "Adligator / Lebesgue 2025" },
+  in: { usd: 1.8, src: "multiple 2025 ($1.36\u20132.6)" },
+  tr: { usd: 2.5, src: "(est) emerging-market proxy \u2014 no direct source" },
+  id: { usd: 2, src: "(est) emerging-market proxy" },
+  ar: { usd: 2.5, src: "(est) emerging-market proxy" }
+};
+var DEFAULT_PAID_CPM = 6;
+var CATEGORY_MULT = {
+  health: 1.5,
+  wellness: 1.5,
+  fitness: 1.4,
+  finance: 1.35,
+  fintech: 1.35,
+  bank: 1.35,
+  invest: 1.3,
+  insurance: 1.3,
+  beauty: 1.2,
+  ecommerce: 1.2,
+  dtc: 1.2,
+  retail: 1.2,
+  fashion: 1.2,
+  skincare: 1.2,
+  dating: 1.05,
+  social: 1.05,
+  matrimony: 1.05,
+  food: 1,
+  beverage: 1,
+  travel: 0.95,
+  education: 0.8,
+  edtech: 0.8,
+  learning: 0.8,
+  music: 0.7,
+  audio: 0.7,
+  gaming: 0.75,
+  games: 0.75,
+  productivity: 0.6,
+  ai: 0.55,
+  saas: 0.55,
+  tech: 0.55
+};
+var DEFAULT_CATEGORY_MULT = 1;
+var ORGANIC_CPM_BY_GEO = {
+  us: 2,
+  br: 0.55,
+  mx: 0.65,
+  in: 0.35,
+  tr: 0.4,
+  id: 0.45,
+  ar: 0.55
+};
+var DEFAULT_ORGANIC_CPM = 0.6;
+var DELTA_CAP = 40;
+function catMult(category) {
+  if (!category) return DEFAULT_CATEGORY_MULT;
+  const c = category.toLowerCase();
+  for (const [k, v] of Object.entries(CATEGORY_MULT)) if (c.includes(k)) return v;
+  return DEFAULT_CATEGORY_MULT;
+}
+var paidCpm = (geo, category) => (PAID_CPM_BY_GEO[(geo || "").toLowerCase()]?.usd ?? DEFAULT_PAID_CPM) * catMult(category);
+var organicCpm = (geo) => ORGANIC_CPM_BY_GEO[(geo || "").toLowerCase()] ?? DEFAULT_ORGANIC_CPM;
+var cpmDelta = (geo, category) => paidCpm(geo, category) / organicCpm(geo);
+function opportunityScore(jakaScore, geo, category) {
+  const fit = jakaScore == null ? 0.5 : Math.max(0, Math.min(1, jakaScore > 1 ? jakaScore / 100 : jakaScore));
+  const dNorm = Math.min(cpmDelta(geo, category), DELTA_CAP) / DELTA_CAP;
+  return Number((fit * dNorm).toFixed(4));
+}
+
+// src/leads/routes.ts
 var send = (res, status, body) => {
   res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
   res.end(body);
@@ -23662,6 +23801,66 @@ async function targetsList(_req, res, url) {
     apps: out
   });
 }
+async function leadsExport(_req, res, url) {
+  const db = getLeadsDb();
+  const [leadsAll, tiers] = await Promise.all([db.listLeadsJoined(), getTiers()]);
+  const q = url.searchParams;
+  const includeAll = ["all", "1"].includes(q.get("include") ?? "");
+  const wantAll = q.get("all") === "1";
+  const status = (q.get("status") ?? "").toLowerCase();
+  const geo = (q.get("geo") ?? "").toLowerCase();
+  const category = (q.get("category") ?? "").toLowerCase();
+  const arm = (q.get("arm") ?? "").toLowerCase();
+  const since = q.get("since") ?? "";
+  const limit = Number(q.get("limit")) || 0;
+  let leads = leadsAll.filter((l) => {
+    const rp = l.raw_payload ?? {};
+    if (!includeAll && (rp.icp_type || rp.duplicate)) return false;
+    if (!(l.company || l.domain)) return false;
+    if (!wantAll && !l.email) return false;
+    if (status && (l.email_status ?? "").toLowerCase() !== status) return false;
+    if (geo && (l.geo ?? "").toLowerCase() !== geo) return false;
+    if (category && (l.category ?? "").toLowerCase() !== category) return false;
+    if (arm && l.source_arm.toLowerCase() !== arm) return false;
+    if (since && l.created_at < since) return false;
+    return true;
+  });
+  leads.sort((a, b) => Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
+  if (limit > 0) leads = leads.slice(0, limit);
+  const out = leads.map((l) => {
+    const rp = l.raw_payload ?? {};
+    return {
+      id: l.id,
+      company: l.company,
+      domain: l.domain,
+      contact_name: l.contact_name,
+      contact_title: l.contact_title,
+      email: l.email,
+      email_status: l.email_status,
+      contact_verified: (l.email_status ?? "").toLowerCase() === "clay_verified",
+      phone: rp.clay_phone || rp.phone || null,
+      linkedin: rp.clay_linkedin || null,
+      geo: l.geo,
+      category: l.category,
+      source_arm: l.source_arm,
+      jaka_score: l.jaka_score,
+      tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy) so external consumers can rank by it too.
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
+      stage: l.stage,
+      created_at: l.created_at,
+      enriched_at: l.enriched_at
+    };
+  });
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=60"
+  });
+  if ((q.get("format") ?? "") === "array") return void res.end(JSON.stringify(out));
+  res.end(JSON.stringify({ count: out.length, generated_at: (/* @__PURE__ */ new Date()).toISOString(), leads: out }));
+}
 var DISPOSITIONS = /* @__PURE__ */ new Set(["", "no_answer", "voicemail", "bad_number", "wrong_icp", "interested", "not_interested", "meeting", "contacted"]);
 async function leadUpdate(req, res) {
   const db = getLeadsDb();
@@ -23721,6 +23920,12 @@ async function pipelinePage(_req, res, url) {
     return {
       ...l,
       tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy): paid vs organic-UGC CPM for this market x category,
+      // their ratio (delta), and fit x normalized delta. Computed live from the cpm-map (no DB columns).
+      cpm_paid: Number(paidCpm(l.geo, l.category).toFixed(1)),
+      cpm_organic: organicCpm(l.geo),
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
       created: fmtDate(l.created_at),
       // Phone for the cold-call campaign: prefer the Clay-sourced number (verified),
       // fall back to the original Apollo/CSV import number (suspect — flagged 'legacy'
@@ -23735,6 +23940,19 @@ async function pipelinePage(_req, res, url) {
       events: (eventsByLead.get(l.id) ?? []).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 12)
     };
   });
+  const CPM_CATS = ["health", "fintech", "beauty", "dating", "food", "edtech", "gaming", "ai"];
+  const cpmCells = [];
+  for (const g of Object.keys(PAID_CPM_BY_GEO)) for (const c of CPM_CATS) cpmCells.push({ g, c, d: cpmDelta(g, c) });
+  cpmCells.sort((a, b) => b.d - a.d);
+  const cpmPanel = `<details class="panel" style="border-color:var(--acc)">
+  <summary style="cursor:pointer;font-weight:600;color:var(--acc)">\u{1F4CA} CPM opportunity \u2014 what the CPM \u0394 &amp; Opp columns mean</summary>
+  <div style="margin-top:10px;font-size:13px;line-height:1.7">
+    <p style="margin:0 0 8px"><b>CPM \u0394</b> = paid ad CPM \xF7 organic creator-UGC CPM for a lead's <b>market \xD7 category</b>. Bigger means organic 8x distribution beats paid ads harder there \u2192 a better-fit lead. <b>Opp</b> = lead fit (score) \xD7 normalized \u0394. <b>Click the \u201COpp\u201D column header to rank your whole pipeline by opportunity.</b></p>
+    <p style="margin:0 0 6px"><b>Most beneficial market \xD7 category right now:</b></p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${cpmCells.slice(0, 8).map((c) => `<span class="pill" style="background:#10301f;color:var(--good);font-size:12px">${c.g.toUpperCase()} \xB7 ${esc(c.c)} \u2014 ${c.d.toFixed(1)}\xD7</span>`).join("")}</div>
+    <p class="dim" style="margin:10px 0 0;font-size:12px">\u26A0 Paid CPMs are real (Meta 2025\u201326 benchmarks). Organic CPMs are <b>estimates</b> until Bulut's social-listening data replaces them \u2014 treat the ranking as directional, not final.</p>
+  </div>
+</details>`;
   const body = `
 <style>
 .chip{cursor:pointer;border:1px solid #2a3340;background:none;color:#9aa7b8;padding:3px 10px;border-radius:14px;font-size:12px}
@@ -23748,6 +23966,7 @@ ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` 
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join("")}
 </div>
+${cpmPanel}
 <div class="panel" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
   <div id="stats" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;align-items:center"></div>
   <div style="display:flex;gap:8px;align-items:center">
@@ -23786,6 +24005,8 @@ ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(
   <th data-k="company" class="sorth">Company</th><th>Contact</th><th data-k="phone" class="sorth">Phone</th><th data-k="email_status" class="sorth">Email</th>
   <th data-k="geo" class="sorth">Geo</th><th data-k="category" class="sorth">Category</th><th data-k="source_arm" class="sorth">Arm</th>
   <th data-k="jaka_score" class="num sorth">Score</th><th data-k="tier" class="sorth">Tier</th>
+  <th data-k="cpm_delta" class="num sorth" title="Paid vs organic-UGC CPM ratio for this market \xD7 category. Bigger = 8x wins harder here.">CPM \u0394</th>
+  <th data-k="opp" class="num sorth" title="Opportunity = lead fit \xD7 normalized CPM delta. Sort by this to prioritize.">Opp</th>
   <th data-k="market_status" class="sorth">Market</th><th>Reason</th><th data-k="stage" class="sorth">Stage</th><th>Provenance</th>
 </tr></thead><tbody></tbody></table>
 <p class="muted-note" id="footnote">funnel counts materialized nightly by funnel_rollup \xB7 click a column to sort \xB7 select rows to export a subset</p>
@@ -23798,6 +24019,9 @@ let sortKey = 'jaka_score', sortDir = -1, chip = '';
 const selected = new Set();
 function escq(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
 const rp = (r) => r.raw_payload || {};
+function deltaCol(d){ if(d==null) return '<span class="dim">\u2013</span>';
+  const c = d>=9?'#3fcf8e':d>=6?'#4da3ff':'#8694ab';
+  return '<span style="color:'+c+';font-weight:600" title="paid\xF7organic CPM for this market \xD7 category">'+(d>=9?'\u{1F525} ':'')+d+'x</span>'; }
 const needsEmail = (r) => !r.email || (r.email_status||'').toLowerCase()==='needs_lookup';
 function passesChip(r){
   if(chip==='needs_email') return needsEmail(r);
@@ -23860,6 +24084,8 @@ function render(){
     '<td>'+escq(r.geo||'\u2013')+'</td><td>'+escq(r.category||'\u2013')+'</td>'+
     '<td><span class="pill">'+escq(r.source_arm)+'</span></td>'+
     '<td class="num"><b>'+(r.jaka_score??'\u2013')+'</b></td><td>'+r.tier+'</td>'+
+    '<td class="num">'+deltaCol(r.cpm_delta)+'</td>'+
+    '<td class="num"><b>'+(r.opp!=null?r.opp.toFixed(2):'\u2013')+'</b></td>'+
     '<td>'+escq(r.market_status||'\u2013')+'</td>'+
     '<td class="clik" style="max-width:240px">'+escq((r.reason||'\u2013').slice(0,110))+'</td>'+
     '<td>'+(STAGE_LABELS[r.stage]||escq(r.stage||'raw'))+'</td>'+
@@ -23876,13 +24102,13 @@ function render(){
     document.querySelectorAll('tr.detail').forEach(d=>d.remove());
     if(open) return;
     const d=document.createElement('tr'); d.className='detail';
-    d.innerHTML='<td colspan="14" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
+    d.innerHTML='<td colspan="16" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
     tr.after(d);
   });
 }
 function exportCSV(){
   const rows = selected.size ? ROWS.filter((_,i)=>selected.has(i)) : filtered();
-  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','stage','market_status','reason'];
+  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','cpm_delta','opp','stage','market_status','reason'];
   const esc=v=>{ const s=(v==null?'':String(v)).replace(/"/g,'""'); return /[",\\n]/.test(s)?'"'+s+'"':s; };
   const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
@@ -23948,6 +24174,14 @@ function callerBrief(r){
     '<ul style="margin:2px 0 0;padding-left:18px">'+talkingPoints(r).map(t=>'<li style="margin:2px 0">'+escq(t)+'</li>').join('')+'</ul>'+
   '</div>';
 }
+function cpmDetailBlock(r){ if(r.cpm_delta==null) return '';
+  const c = r.cpm_delta>=9?'#3fcf8e':r.cpm_delta>=6?'#4da3ff':'#8694ab';
+  const verdict = r.cpm_delta>=8?'Strong fit \u2014 organic UGC dramatically undercuts paid in this market \xD7 category.':r.cpm_delta>=5?'Decent fit \u2014 organic beats paid by a healthy margin here.':'Thin margin \u2014 paid is already cheap or organic is saturated here.';
+  return '<div style="background:#0d1722;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:14px">'+
+    '<h4 style="margin:0 0 6px;font-size:14px">\u{1F4CA} CPM opportunity \u2014 '+escq((r.geo||'?').toUpperCase())+' \xD7 '+escq(r.category||'?')+'</h4>'+
+    '<p style="margin:0">paid ads <b>~$'+r.cpm_paid+'</b> CPM &nbsp;vs&nbsp; organic UGC <b>~$'+r.cpm_organic+'</b> CPM &nbsp;\u2192&nbsp; <b style="color:'+c+'">'+(r.cpm_delta>=9?'\u{1F525} ':'')+r.cpm_delta+'\xD7 delta</b> <span class="dim">\xB7 opportunity '+(r.opp!=null?r.opp.toFixed(2):'\u2013')+'</span></p>'+
+    '<p class="dim" style="margin:4px 0 0;font-size:12px">'+verdict+' <i>Organic CPM is an estimate pending Bulut data.</i></p></div>';
+}
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
@@ -23961,7 +24195,7 @@ function leadDetail(r) {
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
-  return callerBrief(r) +
+  return callerBrief(r) + cpmDetailBlock(r) +
     '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
     dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
@@ -24173,6 +24407,181 @@ async function performancePage(_req, res) {
 <tbody>${replies || '<tr><td colspan="6" class="dim">no replies yet</td></tr>'}</tbody></table></div>`;
   send(res, 200, pageShell({ title: "Leads \xB7 Performance", active: "performance", body }));
 }
+var CAMPAIGN_STATUS = {
+  0: ["Draft", "--dim"],
+  1: ["Active", "--good"],
+  2: ["Paused", "--warn"],
+  3: ["Completed", "--dim"],
+  4: ["Subsequences", "--acc"]
+};
+var statusPill = (s) => {
+  const [label, color] = s == null ? ["\u2014", "--dim"] : CAMPAIGN_STATUS[s] ?? (s < 0 ? ["Issue", "--bad"] : [`#${s}`, "--dim"]);
+  return `<span class="pill" style="color:var(${color})">${esc(label)}</span>`;
+};
+var firstNum = (o, ...keys) => {
+  for (const k of keys) {
+    const v = o[k];
+    if (v != null && Number.isFinite(Number(v))) return Number(v);
+  }
+  return 0;
+};
+var campaignCache = null;
+var CAMPAIGN_TTL = 12e4;
+async function campaignsPage(_req, res, url) {
+  if (!instantlyEnabled()) {
+    const body2 = `
+<div class="panel">
+  <h3 style="margin-top:0">Connect Instantly to pull live campaign analytics</h3>
+  <p class="dim">No <code>INSTANTLY_API_KEY</code> is set, so this page can't reach your Instantly workspace yet.</p>
+  <ol style="line-height:1.9">
+    <li>In Instantly \u2192 <b>Settings \u2192 Integrations \u2192 API Keys</b>, create a key (an "all scopes" or analytics-read key is fine).</li>
+    <li>Local dev: add <code>INSTANTLY_API_KEY=\u2026</code> to <code>~/app-discovery/.env</code> and restart <code>npm run serve:leads</code>.</li>
+    <li>Production: add the same variable in Vercel \u2192 Project \u2192 Settings \u2192 Environment Variables, then redeploy.</li>
+  </ol>
+  <p class="muted-note">This page only ever <b>reads</b> \u2014 it lists campaigns and their counters. It never starts, pauses, schedules, or sends anything.</p>
+</div>`;
+    return send(res, 200, pageShell({ title: "Leads \xB7 Campaigns", active: "campaigns", body: body2 }));
+  }
+  const refresh = url.searchParams.get("refresh") === "1";
+  let data = campaignCache;
+  if (refresh || !data || Date.now() - data.at > CAMPAIGN_TTL) {
+    try {
+      const iso = (d) => d.toISOString().slice(0, 10);
+      const campaigns2 = await listCampaigns();
+      const [analytics2, daily2] = await Promise.all([
+        campaignAnalyticsByIds(campaigns2.map((c) => c.id)),
+        dailyAnalytics(iso(new Date(Date.now() - 29 * 864e5)), iso(/* @__PURE__ */ new Date())).catch(() => [])
+      ]);
+      data = campaignCache = { at: Date.now(), campaigns: campaigns2, analytics: analytics2, daily: daily2 };
+    } catch (err) {
+      const msg = String(err?.message ?? err);
+      const hint = /401|403/.test(msg) ? " \u2014 the API key looks invalid or lacks analytics scope." : "";
+      const body2 = `<div class="panel" style="border-color:var(--bad)">
+        <h3 style="margin-top:0">Couldn't reach Instantly</h3>
+        <p>${esc(msg)}${esc(hint)}</p>
+        <p class="muted-note">Check <code>INSTANTLY_API_KEY</code>, then <a href="/leads/campaigns?refresh=1" style="color:var(--acc)">retry</a>.</p></div>`;
+      return send(res, 200, pageShell({ title: "Leads \xB7 Campaigns", active: "campaigns", body: body2 }));
+    }
+  }
+  const view = data;
+  const { campaigns, analytics, daily } = view;
+  const campById = new Map(campaigns.map((c) => [c.id, c]));
+  const anaById = new Map(analytics.filter((a) => a.campaign_id).map((a) => [a.campaign_id, a]));
+  const idsFromCampaigns = new Set(campaigns.map((c) => c.id));
+  const extraAnalytics = analytics.filter((a) => a.campaign_id && !idsFromCampaigns.has(a.campaign_id));
+  const rows = [...campaigns, ...extraAnalytics.map((a) => ({ id: a.campaign_id, name: a.campaign_name }))].map((c) => {
+    const a = anaById.get(c.id) ?? {};
+    const meta = campById.get(c.id);
+    const leads = firstNum(a, "leads_count");
+    const sent = firstNum(a, "emails_sent_count");
+    const contacted = firstNum(a, "contacted_count", "new_leads_contacted_count");
+    const opens = firstNum(a, "open_count_unique", "open_count");
+    const replies = firstNum(a, "reply_count_unique", "reply_count");
+    const opps = firstNum(a, "total_opportunities");
+    const bounced = firstNum(a, "bounced_count");
+    const reached = contacted || sent;
+    return {
+      id: c.id,
+      name: c.name ?? a.campaign_name ?? c.id,
+      status: meta?.status,
+      leads,
+      sent,
+      contacted,
+      opens,
+      replies,
+      opps,
+      bounced,
+      reached,
+      openRate: reached ? opens / reached : 0,
+      replyRate: reached ? replies / reached : 0,
+      bounceRate: sent ? bounced / sent : 0,
+      created: meta?.timestamp_created ?? ""
+    };
+  });
+  rows.sort((a, b) => b.replyRate - a.replyRate || b.replies - a.replies || b.sent - a.sent);
+  const MIN_VOL = 20;
+  const eligible = rows.filter((r) => r.reached >= MIN_VOL);
+  const meanReply = eligible.length ? eligible.reduce((s, r) => s + r.replyRate, 0) / eligible.length : 0;
+  const bestRate = Math.max(0, ...eligible.map((r) => r.replyRate));
+  const totSent = rows.reduce((s, r) => s + r.sent, 0);
+  const totReplies = rows.reduce((s, r) => s + r.replies, 0);
+  const totReached = rows.reduce((s, r) => s + r.reached, 0);
+  const totOpps = rows.reduce((s, r) => s + r.opps, 0);
+  const activeCount = rows.filter((r) => r.status === 1).length;
+  const stat = (label, value, sub = "") => `<div class="stat"><b>${value}</b><span>${esc(label)}${sub ? ` \xB7 ${esc(sub)}` : ""}</span></div>`;
+  const cards = stat("Campaigns", String(rows.length), `${activeCount} active`) + stat("Emails sent", totSent.toLocaleString()) + stat("Replies", totReplies.toLocaleString(), `${pct(totReplies, totReached)} reply rate`) + stat("Opportunities", totOpps.toLocaleString());
+  const tableRows = rows.map((r) => {
+    const top = r.reached >= MIN_VOL && bestRate > 0 && r.replyRate === bestRate;
+    const under = r.reached >= MIN_VOL && meanReply > 0 && r.replyRate < meanReply * 0.5;
+    const highBounce = r.sent >= MIN_VOL && r.bounceRate > 0.05;
+    const barW = bestRate > 0 ? Math.round(r.replyRate / bestRate * 60) : 0;
+    const flags = [
+      top ? '<span class="pill new">\u{1F3C6} top</span>' : "",
+      under ? '<span class="flag">\u26A0 low</span>' : "",
+      highBounce ? `<span class="flag">\u{1F6AB} ${pct(r.bounced, r.sent)} bounce</span>` : ""
+    ].join(" ");
+    return `<tr${under ? ' style="outline:1px solid var(--bad)"' : ""}
+      data-name="${esc(r.name.toLowerCase())}" data-status="${r.status ?? 99}" data-leads="${r.leads}"
+      data-sent="${r.sent}" data-contacted="${r.contacted}" data-opens="${r.openRate}" data-replies="${r.replyRate}"
+      data-repliesn="${r.replies}" data-opps="${r.opps}" data-bounce="${r.bounceRate}" data-created="${esc(r.created)}">
+      <td><b>${esc(r.name)}</b> ${flags}</td>
+      <td>${statusPill(r.status)}</td>
+      <td class="num">${r.leads.toLocaleString()}</td>
+      <td class="num">${r.sent.toLocaleString()}</td>
+      <td class="num">${r.opens.toLocaleString()}<br><span class="dim">${pct(r.opens, r.reached)}</span></td>
+      <td class="num"><div style="display:flex;align-items:center;justify-content:flex-end;gap:7px">
+        <span><b>${r.replies}</b><br><span class="dim">${pct(r.replies, r.reached)}</span></span>
+        <span style="display:inline-block;width:${barW}px;height:8px;background:var(--good);border-radius:4px"></span></div></td>
+      <td class="num">${r.opps || '<span class="dim">\u2013</span>'}</td>
+      <td class="num">${r.bounced || 0}<br><span class="dim">${pct(r.bounced, r.sent)}</span></td>
+      <td>${fmtDate(r.created)}</td></tr>`;
+  }).join("");
+  let trend = "";
+  if (daily.length) {
+    const byDate = new Map(daily.map((d) => [d.date?.slice(0, 10), d]));
+    const days = [];
+    for (let i = 29; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5).toISOString().slice(0, 10));
+    const repl = days.map((d) => firstNum(byDate.get(d) ?? {}, "unique_replies", "replies"));
+    const sent = days.map((d) => firstNum(byDate.get(d) ?? {}, "sent"));
+    const W = 720, H = 140, maxR = Math.max(1, ...repl), maxS = Math.max(1, ...sent);
+    const poly = (vals, max, color) => `<polyline points="${vals.map((v, x) => `${x / 29 * W},${H - v / max * (H - 10)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+    trend = `<div class="panel"><h3 style="margin-top:0">Last 30 days
+      <span class="pill" style="border-left:8px solid var(--good)">replies (peak ${maxR})</span>
+      <span class="pill" style="border-left:8px solid var(--acc)">sent (peak ${maxS})</span></h3>
+      <svg width="${W}" height="${H}" style="max-width:100%">${poly(sent, maxS, "#4da3ff")}${poly(repl, maxR, "#3fcf8e")}</svg></div>`;
+  }
+  const pulled = new Date(view.at).toLocaleString();
+  const body = `
+<p class="dim">Live from your Instantly workspace \u2014 ranked by reply rate so the best (\u{1F3C6}) and weakest (\u26A0 &lt; half the mean) campaigns stand out.
+Cached 2 min \xB7 pulled ${esc(pulled)} \xB7 <a href="/leads/campaigns?refresh=1" style="color:var(--acc)">refresh now</a>. Read-only: nothing here sends.</p>
+<div>${cards}</div>
+${trend}
+<div class="panel"><h3 style="margin-top:0">All campaigns <span class="dim" style="font-weight:400">\xB7 click a column to sort</span></h3>
+<table id="camptbl"><thead><tr>
+  <th class="sorth" data-k="name">Campaign</th>
+  <th class="sorth" data-k="status">Status</th>
+  <th class="num sorth" data-k="leads">Leads</th>
+  <th class="num sorth" data-k="sent">Sent</th>
+  <th class="num sorth" data-k="opens">Opens</th>
+  <th class="num sorth" data-k="replies">Replies / rate</th>
+  <th class="num sorth" data-k="opps">Opps</th>
+  <th class="num sorth" data-k="bounce">Bounced</th>
+  <th class="sorth" data-k="created">Created</th>
+</tr></thead>
+<tbody id="camptb">${tableRows || '<tr><td colspan="9" class="dim">no campaigns found in this workspace</td></tr>'}</tbody></table></div>`;
+  const script = `
+const tb=document.getElementById('camptb'); const dir={};
+document.querySelectorAll('#camptbl th.sorth').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k, d=dir[k]=-(dir[k]||1), num=th.classList.contains('num');
+  [...tb.querySelectorAll('tr')].sort((a,b)=>{
+    const x=a.dataset[k]||'', y=b.dataset[k]||'';
+    return (num?(parseFloat(x)||0)-(parseFloat(y)||0):x.localeCompare(y))*d;
+  }).forEach(r=>tb.appendChild(r));
+  document.querySelectorAll('#camptbl th.sorth').forEach(t=>{t.textContent=t.textContent.replace(/ *[\u25BE\u25B4]$/,'');});
+  th.textContent=th.textContent.replace(/ *[\u25BE\u25B4]$/,'')+(d<0?' \u25BE':' \u25B4');
+}));`;
+  send(res, 200, pageShell({ title: "Leads \xB7 Campaigns", active: "campaigns", body, script }));
+}
 async function settingsPage(_req, res, url) {
   const db = getLeadsDb();
   const [config, suggestions, audit] = await Promise.all([
@@ -24330,10 +24739,12 @@ function registerRoutes(routes2) {
   routes2.set("POST /leads/approvals/approve", approveAction);
   routes2.set("POST /leads/approvals/reject", rejectAction);
   routes2.set("GET /leads/performance", performancePage);
+  routes2.set("GET /leads/campaigns", campaignsPage);
   routes2.set("GET /leads/settings", settingsPage);
   routes2.set("POST /leads/settings/resolve", resolveSuggestionAction);
   routes2.set("POST /leads/clay", clayIngest);
   routes2.set("GET /leads/targets", targetsList);
+  routes2.set("GET /leads/export", leadsExport);
   routes2.set("POST /leads/update", leadUpdate);
 }
 
@@ -24366,19 +24777,35 @@ function passwordOk(req) {
 async function handler(req, res) {
   const host = req.headers.host || "localhost";
   const url = new URL(req.url ?? "/", `https://${host}`);
-  if (url.pathname === "/leads/clay" || url.pathname === "/leads/targets") {
-    const token = process.env.CLAY_WEBHOOK_TOKEN;
-    const sent = req.headers["x-clay-token"] || url.searchParams.get("token") || "";
-    if (!token || sent !== token) {
+  if (url.pathname === "/leads/clay" || url.pathname === "/leads/targets" || url.pathname === "/leads/export") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type, x-clay-token, authorization",
+        "access-control-max-age": "86400"
+      });
+      res.end();
+      return;
+    }
+    const writeTok = process.env.CLAY_WEBHOOK_TOKEN;
+    const readTok = process.env.LEADS_READ_TOKEN;
+    const sent = req.headers["x-clay-token"] || (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "") || url.searchParams.get("token") || "";
+    const ok = url.pathname === "/leads/export" ? Boolean(readTok && sent === readTok || writeTok && sent === writeTok) : Boolean(writeTok && sent === writeTok);
+    if (!ok) {
       res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
       res.end('{"error":"unauthorized"}');
       return;
     }
-    const clay = routes.get(`${req.method} ${url.pathname}`);
-    if (clay) {
-      await clay(req, res, url);
+    const route2 = routes.get(`${req.method} ${url.pathname}`);
+    if (route2) {
+      await route2(req, res, url);
       return;
     }
+    const allow = url.pathname === "/leads/clay" ? "POST, OPTIONS" : "GET, OPTIONS";
+    res.writeHead(405, { "content-type": "application/json; charset=utf-8", allow });
+    res.end('{"error":"method_not_allowed"}');
+    return;
   }
   if (!passwordOk(req)) return unauthorized(res);
   const route = routes.get(`${req.method} ${url.pathname}`);
