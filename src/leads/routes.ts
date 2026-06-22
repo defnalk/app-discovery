@@ -14,7 +14,6 @@ import {
   instantlyEnabled, pushLead, listCampaigns, campaignAnalyticsByIds, dailyAnalytics,
   type InstantlyCampaign, type CampaignAnalytics, type DailyAnalytics,
 } from './instantly.ts';
-import { cpmDelta, opportunityScore, paidCpm, organicCpm, PAID_CPM_BY_GEO } from './cpm-map.ts';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> | void;
 
@@ -196,82 +195,6 @@ async function targetsList(_req: IncomingMessage, res: ServerResponse, url: URL)
   });
 }
 
-/**
- * Read-only JSON feed of the enriched lead book for EXTERNAL consumers — e.g. Bulut's
- * website pulls leads straight from here instead of waiting on a manual export/handoff.
- * Token-gated by the entry layer (LEADS_READ_TOKEN or, failing that, CLAY_WEBHOOK_TOKEN)
- * and CORS-open so a site or static build can fetch it.
- *
- * Defaults to consumer-app leads that HAVE a contact email (the actionable book); off-ICP
- * and duplicates are excluded unless ?include=all. Filters:
- *   ?status=clay_verified  ?geo=in  ?category=Education  ?arm=lookalike
- *   ?since=2026-06-01       ?limit=500   ?all=1 (also include leads with no email)
- *   ?format=array          (bare array; default is a {count, generated_at, leads} object)
- */
-async function leadsExport(_req: IncomingMessage, res: ServerResponse, url: URL) {
-  const db = getLeadsDb();
-  const [leadsAll, tiers] = await Promise.all([db.listLeadsJoined(), getTiers()]);
-  const q = url.searchParams;
-  const includeAll = ['all', '1'].includes(q.get('include') ?? '');
-  const wantAll = q.get('all') === '1'; // include leads without an email too
-  const status = (q.get('status') ?? '').toLowerCase();
-  const geo = (q.get('geo') ?? '').toLowerCase();
-  const category = (q.get('category') ?? '').toLowerCase();
-  const arm = (q.get('arm') ?? '').toLowerCase();
-  const since = q.get('since') ?? '';
-  const limit = Number(q.get('limit')) || 0;
-
-  let leads = leadsAll.filter((l) => {
-    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
-    if (!includeAll && (rp.icp_type || rp.duplicate)) return false;
-    if (!(l.company || l.domain)) return false;
-    if (!wantAll && !l.email) return false;
-    if (status && (l.email_status ?? '').toLowerCase() !== status) return false;
-    if (geo && (l.geo ?? '').toLowerCase() !== geo) return false;
-    if (category && (l.category ?? '').toLowerCase() !== category) return false;
-    if (arm && l.source_arm.toLowerCase() !== arm) return false;
-    if (since && l.created_at < since) return false;
-    return true;
-  });
-  leads.sort((a, b) => Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
-  if (limit > 0) leads = leads.slice(0, limit);
-
-  const out = leads.map((l) => {
-    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
-    return {
-      id: l.id,
-      company: l.company,
-      domain: l.domain,
-      contact_name: l.contact_name,
-      contact_title: l.contact_title,
-      email: l.email,
-      email_status: l.email_status,
-      contact_verified: (l.email_status ?? '').toLowerCase() === 'clay_verified',
-      phone: (rp.clay_phone as string | undefined) || (rp.phone as string | undefined) || null,
-      linkedin: (rp.clay_linkedin as string | undefined) || null,
-      geo: l.geo,
-      category: l.category,
-      source_arm: l.source_arm,
-      jaka_score: l.jaka_score,
-      tier: tierOf(l.jaka_score, tiers),
-      // CPM-delta opportunity (Jun 11 strategy) so external consumers can rank by it too.
-      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
-      opp: opportunityScore(l.jaka_score, l.geo, l.category),
-      stage: l.stage,
-      created_at: l.created_at,
-      enriched_at: l.enriched_at,
-    };
-  });
-
-  res.writeHead(200, {
-    'content-type': 'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
-    'cache-control': 'public, max-age=60',
-  });
-  if ((q.get('format') ?? '') === 'array') return void res.end(JSON.stringify(out));
-  res.end(JSON.stringify({ count: out.length, generated_at: new Date().toISOString(), leads: out }));
-}
-
 // Inline CRM write: reps set a call disposition / favorite / note from the dashboard.
 // Auth = dashboard Basic Auth (the browser already holds it), same as the other pages.
 const DISPOSITIONS = new Set(['', 'no_answer', 'voicemail', 'bad_number', 'wrong_icp', 'interested', 'not_interested', 'meeting', 'contacted']);
@@ -328,12 +251,6 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     return {
       ...l,
       tier: tierOf(l.jaka_score, tiers),
-      // CPM-delta opportunity (Jun 11 strategy): paid vs organic-UGC CPM for this market x category,
-      // their ratio (delta), and fit x normalized delta. Computed live from the cpm-map (no DB columns).
-      cpm_paid: Number(paidCpm(l.geo, l.category).toFixed(1)),
-      cpm_organic: organicCpm(l.geo),
-      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
-      opp: opportunityScore(l.jaka_score, l.geo, l.category),
       created: fmtDate(l.created_at),
       // Phone for the cold-call campaign: prefer the Clay-sourced number (verified),
       // fall back to the original Apollo/CSV import number (suspect — flagged 'legacy'
@@ -349,21 +266,6 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     };
   });
 
-  // CPM opportunity explainer + the most beneficial market×category cells (Jun 11 strategy lens).
-  const CPM_CATS = ['health', 'fintech', 'beauty', 'dating', 'food', 'edtech', 'gaming', 'ai'];
-  const cpmCells: { g: string; c: string; d: number }[] = [];
-  for (const g of Object.keys(PAID_CPM_BY_GEO)) for (const c of CPM_CATS) cpmCells.push({ g, c, d: cpmDelta(g, c) });
-  cpmCells.sort((a, b) => b.d - a.d);
-  const cpmPanel = `<details class="panel" style="border-color:var(--acc)">
-  <summary style="cursor:pointer;font-weight:600;color:var(--acc)">📊 CPM opportunity — what the CPM Δ &amp; Opp columns mean</summary>
-  <div style="margin-top:10px;font-size:13px;line-height:1.7">
-    <p style="margin:0 0 8px"><b>CPM Δ</b> = paid ad CPM ÷ organic creator-UGC CPM for a lead's <b>market × category</b>. Bigger means organic 8x distribution beats paid ads harder there → a better-fit lead. <b>Opp</b> = lead fit (score) × normalized Δ. <b>Click the “Opp” column header to rank your whole pipeline by opportunity.</b></p>
-    <p style="margin:0 0 6px"><b>Most beneficial market × category right now:</b></p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${cpmCells.slice(0, 8).map((c) => `<span class="pill" style="background:#10301f;color:var(--good);font-size:12px">${c.g.toUpperCase()} · ${esc(c.c)} — ${c.d.toFixed(1)}×</span>`).join('')}</div>
-    <p class="dim" style="margin:10px 0 0;font-size:12px">⚠ Paid CPMs are real (Meta 2025–26 benchmarks). Organic CPMs are <b>estimates</b> until Bulut's social-listening data replaces them — treat the ranking as directional, not final.</p>
-  </div>
-</details>`;
-
   const body = `
 <style>
 .chip{cursor:pointer;border:1px solid #2a3340;background:none;color:#9aa7b8;padding:3px 10px;border-radius:14px;font-size:12px}
@@ -377,7 +279,6 @@ ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` 
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join('')}
 </div>
-${cpmPanel}
 <div class="panel" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
   <div id="stats" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;align-items:center"></div>
   <div style="display:flex;gap:8px;align-items:center">
@@ -418,8 +319,6 @@ ${cpmPanel}
   <th data-k="company" class="sorth">Company</th><th>Contact</th><th data-k="phone" class="sorth">Phone</th><th data-k="email_status" class="sorth">Email</th>
   <th data-k="geo" class="sorth">Geo</th><th data-k="category" class="sorth">Category</th><th data-k="source_arm" class="sorth">Arm</th>
   <th data-k="jaka_score" class="num sorth">Score</th><th data-k="tier" class="sorth">Tier</th>
-  <th data-k="cpm_delta" class="num sorth" title="Paid vs organic-UGC CPM ratio for this market × category. Bigger = 8x wins harder here.">CPM Δ</th>
-  <th data-k="opp" class="num sorth" title="Opportunity = lead fit × normalized CPM delta. Sort by this to prioritize.">Opp</th>
   <th data-k="market_status" class="sorth">Market</th><th>Reason</th><th data-k="stage" class="sorth">Stage</th><th>Provenance</th>
 </tr></thead><tbody></tbody></table>
 <p class="muted-note" id="footnote">funnel counts materialized nightly by funnel_rollup · click a column to sort · select rows to export a subset</p>
@@ -433,9 +332,6 @@ let sortKey = 'jaka_score', sortDir = -1, chip = '';
 const selected = new Set();
 function escq(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
 const rp = (r) => r.raw_payload || {};
-function deltaCol(d){ if(d==null) return '<span class="dim">–</span>';
-  const c = d>=9?'#3fcf8e':d>=6?'#4da3ff':'#8694ab';
-  return '<span style="color:'+c+';font-weight:600" title="paid÷organic CPM for this market × category">'+(d>=9?'🔥 ':'')+d+'x</span>'; }
 const needsEmail = (r) => !r.email || (r.email_status||'').toLowerCase()==='needs_lookup';
 function passesChip(r){
   if(chip==='needs_email') return needsEmail(r);
@@ -498,8 +394,6 @@ function render(){
     '<td>'+escq(r.geo||'–')+'</td><td>'+escq(r.category||'–')+'</td>'+
     '<td><span class="pill">'+escq(r.source_arm)+'</span></td>'+
     '<td class="num"><b>'+(r.jaka_score??'–')+'</b></td><td>'+r.tier+'</td>'+
-    '<td class="num">'+deltaCol(r.cpm_delta)+'</td>'+
-    '<td class="num"><b>'+(r.opp!=null?r.opp.toFixed(2):'–')+'</b></td>'+
     '<td>'+escq(r.market_status||'–')+'</td>'+
     '<td class="clik" style="max-width:240px">'+escq((r.reason||'–').slice(0,110))+'</td>'+
     '<td>'+(STAGE_LABELS[r.stage]||escq(r.stage||'raw'))+'</td>'+
@@ -516,13 +410,13 @@ function render(){
     document.querySelectorAll('tr.detail').forEach(d=>d.remove());
     if(open) return;
     const d=document.createElement('tr'); d.className='detail';
-    d.innerHTML='<td colspan="16" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
+    d.innerHTML='<td colspan="14" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
     tr.after(d);
   });
 }
 function exportCSV(){
   const rows = selected.size ? ROWS.filter((_,i)=>selected.has(i)) : filtered();
-  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','cpm_delta','opp','stage','market_status','reason'];
+  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','stage','market_status','reason'];
   const esc=v=>{ const s=(v==null?'':String(v)).replace(/"/g,'""'); return /[",\\n]/.test(s)?'"'+s+'"':s; };
   const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
@@ -588,14 +482,6 @@ function callerBrief(r){
     '<ul style="margin:2px 0 0;padding-left:18px">'+talkingPoints(r).map(t=>'<li style="margin:2px 0">'+escq(t)+'</li>').join('')+'</ul>'+
   '</div>';
 }
-function cpmDetailBlock(r){ if(r.cpm_delta==null) return '';
-  const c = r.cpm_delta>=9?'#3fcf8e':r.cpm_delta>=6?'#4da3ff':'#8694ab';
-  const verdict = r.cpm_delta>=8?'Strong fit — organic UGC dramatically undercuts paid in this market × category.':r.cpm_delta>=5?'Decent fit — organic beats paid by a healthy margin here.':'Thin margin — paid is already cheap or organic is saturated here.';
-  return '<div style="background:#0d1722;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:14px">'+
-    '<h4 style="margin:0 0 6px;font-size:14px">📊 CPM opportunity — '+escq((r.geo||'?').toUpperCase())+' × '+escq(r.category||'?')+'</h4>'+
-    '<p style="margin:0">paid ads <b>~$'+r.cpm_paid+'</b> CPM &nbsp;vs&nbsp; organic UGC <b>~$'+r.cpm_organic+'</b> CPM &nbsp;→&nbsp; <b style="color:'+c+'">'+(r.cpm_delta>=9?'🔥 ':'')+r.cpm_delta+'× delta</b> <span class="dim">· opportunity '+(r.opp!=null?r.opp.toFixed(2):'–')+'</span></p>'+
-    '<p class="dim" style="margin:4px 0 0;font-size:12px">'+verdict+' <i>Organic CPM is an estimate pending Bulut data.</i></p></div>';
-}
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
@@ -609,7 +495,7 @@ function leadDetail(r) {
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
-  return callerBrief(r) + cpmDetailBlock(r) +
+  return callerBrief(r) +
     '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
     dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
@@ -1222,6 +1108,5 @@ export function registerRoutes(routes: Map<string, Handler>) {
   routes.set('POST /leads/settings/resolve', resolveSuggestionAction);
   routes.set('POST /leads/clay', clayIngest); // Clay sends enriched contacts IN (token-gated by entry layer)
   routes.set('GET /leads/targets', targetsList); // Clay imports the target company list OUT (token-gated)
-  routes.set('GET /leads/export', leadsExport); // read-only JSON feed for external sites (token-gated by entry layer)
   routes.set('POST /leads/update', leadUpdate); // inline CRM: rep sets disposition / favorite / note
 }
