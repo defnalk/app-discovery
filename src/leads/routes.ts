@@ -10,7 +10,11 @@ import { pageShell, esc, embedJson } from '../lib/html.ts';
 import { log } from '../lib/log.ts';
 import { getLeadsDb, FUNNEL_STAGES, type LeadJoined } from './db.ts';
 import { tierOf, DEFAULT_TIERS } from './jobs.ts';
-import { instantlyEnabled, pushLead } from './instantly.ts';
+import {
+  instantlyEnabled, pushLead, listCampaigns, campaignAnalyticsByIds, dailyAnalytics,
+  type InstantlyCampaign, type CampaignAnalytics, type DailyAnalytics,
+} from './instantly.ts';
+import { cpmDelta, opportunityScore, paidCpm, organicCpm, PAID_CPM_BY_GEO } from './cpm-map.ts';
 
 type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> | void;
 
@@ -192,6 +196,82 @@ async function targetsList(_req: IncomingMessage, res: ServerResponse, url: URL)
   });
 }
 
+/**
+ * Read-only JSON feed of the enriched lead book for EXTERNAL consumers — e.g. Bulut's
+ * website pulls leads straight from here instead of waiting on a manual export/handoff.
+ * Token-gated by the entry layer (LEADS_READ_TOKEN or, failing that, CLAY_WEBHOOK_TOKEN)
+ * and CORS-open so a site or static build can fetch it.
+ *
+ * Defaults to consumer-app leads that HAVE a contact email (the actionable book); off-ICP
+ * and duplicates are excluded unless ?include=all. Filters:
+ *   ?status=clay_verified  ?geo=in  ?category=Education  ?arm=lookalike
+ *   ?since=2026-06-01       ?limit=500   ?all=1 (also include leads with no email)
+ *   ?format=array          (bare array; default is a {count, generated_at, leads} object)
+ */
+async function leadsExport(_req: IncomingMessage, res: ServerResponse, url: URL) {
+  const db = getLeadsDb();
+  const [leadsAll, tiers] = await Promise.all([db.listLeadsJoined(), getTiers()]);
+  const q = url.searchParams;
+  const includeAll = ['all', '1'].includes(q.get('include') ?? '');
+  const wantAll = q.get('all') === '1'; // include leads without an email too
+  const status = (q.get('status') ?? '').toLowerCase();
+  const geo = (q.get('geo') ?? '').toLowerCase();
+  const category = (q.get('category') ?? '').toLowerCase();
+  const arm = (q.get('arm') ?? '').toLowerCase();
+  const since = q.get('since') ?? '';
+  const limit = Number(q.get('limit')) || 0;
+
+  let leads = leadsAll.filter((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    if (!includeAll && (rp.icp_type || rp.duplicate)) return false;
+    if (!(l.company || l.domain)) return false;
+    if (!wantAll && !l.email) return false;
+    if (status && (l.email_status ?? '').toLowerCase() !== status) return false;
+    if (geo && (l.geo ?? '').toLowerCase() !== geo) return false;
+    if (category && (l.category ?? '').toLowerCase() !== category) return false;
+    if (arm && l.source_arm.toLowerCase() !== arm) return false;
+    if (since && l.created_at < since) return false;
+    return true;
+  });
+  leads.sort((a, b) => Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
+  if (limit > 0) leads = leads.slice(0, limit);
+
+  const out = leads.map((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    return {
+      id: l.id,
+      company: l.company,
+      domain: l.domain,
+      contact_name: l.contact_name,
+      contact_title: l.contact_title,
+      email: l.email,
+      email_status: l.email_status,
+      contact_verified: (l.email_status ?? '').toLowerCase() === 'clay_verified',
+      phone: (rp.clay_phone as string | undefined) || (rp.phone as string | undefined) || null,
+      linkedin: (rp.clay_linkedin as string | undefined) || null,
+      geo: l.geo,
+      category: l.category,
+      source_arm: l.source_arm,
+      jaka_score: l.jaka_score,
+      tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy) so external consumers can rank by it too.
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
+      stage: l.stage,
+      created_at: l.created_at,
+      enriched_at: l.enriched_at,
+    };
+  });
+
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'cache-control': 'public, max-age=60',
+  });
+  if ((q.get('format') ?? '') === 'array') return void res.end(JSON.stringify(out));
+  res.end(JSON.stringify({ count: out.length, generated_at: new Date().toISOString(), leads: out }));
+}
+
 // Inline CRM write: reps set a call disposition / favorite / note from the dashboard.
 // Auth = dashboard Basic Auth (the browser already holds it), same as the other pages.
 const DISPOSITIONS = new Set(['', 'no_answer', 'voicemail', 'bad_number', 'wrong_icp', 'interested', 'not_interested', 'meeting', 'contacted']);
@@ -248,6 +328,12 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     return {
       ...l,
       tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy): paid vs organic-UGC CPM for this market x category,
+      // their ratio (delta), and fit x normalized delta. Computed live from the cpm-map (no DB columns).
+      cpm_paid: Number(paidCpm(l.geo, l.category).toFixed(1)),
+      cpm_organic: organicCpm(l.geo),
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
       created: fmtDate(l.created_at),
       // Phone for the cold-call campaign: prefer the Clay-sourced number (verified),
       // fall back to the original Apollo/CSV import number (suspect — flagged 'legacy'
@@ -263,6 +349,21 @@ async function pipelinePage(_req: IncomingMessage, res: ServerResponse, url: URL
     };
   });
 
+  // CPM opportunity explainer + the most beneficial market×category cells (Jun 11 strategy lens).
+  const CPM_CATS = ['health', 'fintech', 'beauty', 'dating', 'food', 'edtech', 'gaming', 'ai'];
+  const cpmCells: { g: string; c: string; d: number }[] = [];
+  for (const g of Object.keys(PAID_CPM_BY_GEO)) for (const c of CPM_CATS) cpmCells.push({ g, c, d: cpmDelta(g, c) });
+  cpmCells.sort((a, b) => b.d - a.d);
+  const cpmPanel = `<details class="panel" style="border-color:var(--acc)">
+  <summary style="cursor:pointer;font-weight:600;color:var(--acc)">📊 CPM opportunity — what the CPM Δ &amp; Opp columns mean</summary>
+  <div style="margin-top:10px;font-size:13px;line-height:1.7">
+    <p style="margin:0 0 8px"><b>CPM Δ</b> = paid ad CPM ÷ organic creator-UGC CPM for a lead's <b>market × category</b>. Bigger means organic 8x distribution beats paid ads harder there → a better-fit lead. <b>Opp</b> = lead fit (score) × normalized Δ. <b>Click the “Opp” column header to rank your whole pipeline by opportunity.</b></p>
+    <p style="margin:0 0 6px"><b>Most beneficial market × category right now:</b></p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${cpmCells.slice(0, 8).map((c) => `<span class="pill" style="background:#10301f;color:var(--good);font-size:12px">${c.g.toUpperCase()} · ${esc(c.c)} — ${c.d.toFixed(1)}×</span>`).join('')}</div>
+    <p class="dim" style="margin:10px 0 0;font-size:12px">⚠ Paid CPMs are real (Meta 2025–26 benchmarks). Organic CPMs are <b>estimates</b> until Bulut's social-listening data replaces them — treat the ranking as directional, not final.</p>
+  </div>
+</details>`;
+
   const body = `
 <style>
 .chip{cursor:pointer;border:1px solid #2a3340;background:none;color:#9aa7b8;padding:3px 10px;border-radius:14px;font-size:12px}
@@ -276,6 +377,7 @@ ${msg ? `<div class="panel" style="border-color:var(--good)">${esc(msg)}</div>` 
 <div id="funnel">
 ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(s) ?? 0}</b><span>${STAGE_LABELS[s]}</span></div>`).join('')}
 </div>
+${cpmPanel}
 <div class="panel" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px">
   <div id="stats" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;align-items:center"></div>
   <div style="display:flex;gap:8px;align-items:center">
@@ -316,6 +418,8 @@ ${FUNNEL_STAGES.map((s) => `<div class="stat" data-stage="${s}"><b>${totals.get(
   <th data-k="company" class="sorth">Company</th><th>Contact</th><th data-k="phone" class="sorth">Phone</th><th data-k="email_status" class="sorth">Email</th>
   <th data-k="geo" class="sorth">Geo</th><th data-k="category" class="sorth">Category</th><th data-k="source_arm" class="sorth">Arm</th>
   <th data-k="jaka_score" class="num sorth">Score</th><th data-k="tier" class="sorth">Tier</th>
+  <th data-k="cpm_delta" class="num sorth" title="Paid vs organic-UGC CPM ratio for this market × category. Bigger = 8x wins harder here.">CPM Δ</th>
+  <th data-k="opp" class="num sorth" title="Opportunity = lead fit × normalized CPM delta. Sort by this to prioritize.">Opp</th>
   <th data-k="market_status" class="sorth">Market</th><th>Reason</th><th data-k="stage" class="sorth">Stage</th><th>Provenance</th>
 </tr></thead><tbody></tbody></table>
 <p class="muted-note" id="footnote">funnel counts materialized nightly by funnel_rollup · click a column to sort · select rows to export a subset</p>
@@ -329,6 +433,9 @@ let sortKey = 'jaka_score', sortDir = -1, chip = '';
 const selected = new Set();
 function escq(s){ const d=document.createElement('div'); d.textContent=s??''; return d.innerHTML; }
 const rp = (r) => r.raw_payload || {};
+function deltaCol(d){ if(d==null) return '<span class="dim">–</span>';
+  const c = d>=9?'#3fcf8e':d>=6?'#4da3ff':'#8694ab';
+  return '<span style="color:'+c+';font-weight:600" title="paid÷organic CPM for this market × category">'+(d>=9?'🔥 ':'')+d+'x</span>'; }
 const needsEmail = (r) => !r.email || (r.email_status||'').toLowerCase()==='needs_lookup';
 function passesChip(r){
   if(chip==='needs_email') return needsEmail(r);
@@ -391,6 +498,8 @@ function render(){
     '<td>'+escq(r.geo||'–')+'</td><td>'+escq(r.category||'–')+'</td>'+
     '<td><span class="pill">'+escq(r.source_arm)+'</span></td>'+
     '<td class="num"><b>'+(r.jaka_score??'–')+'</b></td><td>'+r.tier+'</td>'+
+    '<td class="num">'+deltaCol(r.cpm_delta)+'</td>'+
+    '<td class="num"><b>'+(r.opp!=null?r.opp.toFixed(2):'–')+'</b></td>'+
     '<td>'+escq(r.market_status||'–')+'</td>'+
     '<td class="clik" style="max-width:240px">'+escq((r.reason||'–').slice(0,110))+'</td>'+
     '<td>'+(STAGE_LABELS[r.stage]||escq(r.stage||'raw'))+'</td>'+
@@ -407,13 +516,13 @@ function render(){
     document.querySelectorAll('tr.detail').forEach(d=>d.remove());
     if(open) return;
     const d=document.createElement('tr'); d.className='detail';
-    d.innerHTML='<td colspan="14" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
+    d.innerHTML='<td colspan="16" style="background:#11161f;padding:14px 18px">'+leadDetail(ROWS[+tr.dataset.i])+'</td>';
     tr.after(d);
   });
 }
 function exportCSV(){
   const rows = selected.size ? ROWS.filter((_,i)=>selected.has(i)) : filtered();
-  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','stage','market_status','reason'];
+  const cols=['company','domain','contact_name','contact_title','phone','phone_src','email','email_status','geo','category','source_arm','jaka_score','tier','cpm_delta','opp','stage','market_status','reason'];
   const esc=v=>{ const s=(v==null?'':String(v)).replace(/"/g,'""'); return /[",\\n]/.test(s)?'"'+s+'"':s; };
   const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
@@ -479,6 +588,14 @@ function callerBrief(r){
     '<ul style="margin:2px 0 0;padding-left:18px">'+talkingPoints(r).map(t=>'<li style="margin:2px 0">'+escq(t)+'</li>').join('')+'</ul>'+
   '</div>';
 }
+function cpmDetailBlock(r){ if(r.cpm_delta==null) return '';
+  const c = r.cpm_delta>=9?'#3fcf8e':r.cpm_delta>=6?'#4da3ff':'#8694ab';
+  const verdict = r.cpm_delta>=8?'Strong fit — organic UGC dramatically undercuts paid in this market × category.':r.cpm_delta>=5?'Decent fit — organic beats paid by a healthy margin here.':'Thin margin — paid is already cheap or organic is saturated here.';
+  return '<div style="background:#0d1722;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:14px">'+
+    '<h4 style="margin:0 0 6px;font-size:14px">📊 CPM opportunity — '+escq((r.geo||'?').toUpperCase())+' × '+escq(r.category||'?')+'</h4>'+
+    '<p style="margin:0">paid ads <b>~$'+r.cpm_paid+'</b> CPM &nbsp;vs&nbsp; organic UGC <b>~$'+r.cpm_organic+'</b> CPM &nbsp;→&nbsp; <b style="color:'+c+'">'+(r.cpm_delta>=9?'🔥 ':'')+r.cpm_delta+'× delta</b> <span class="dim">· opportunity '+(r.opp!=null?r.opp.toFixed(2):'–')+'</span></p>'+
+    '<p class="dim" style="margin:4px 0 0;font-size:12px">'+verdict+' <i>Organic CPM is an estimate pending Bulut data.</i></p></div>';
+}
 function leadDetail(r) {
   const p = r.raw_payload || {};
   const signals = [
@@ -492,7 +609,7 @@ function leadDetail(r) {
   ].join('');
   const timeline = (r.events||[]).map(e =>
     '<tr><td>' + e.at.slice(0, 10) + '</td><td>' + escq(e.type) + '</td></tr>').join('');
-  return callerBrief(r) +
+  return callerBrief(r) + cpmDetailBlock(r) +
     '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
     dispControls(r) +
     '<div style="max-width:560px"><h4 style="margin:0 0 6px">Signals &amp; classification</h4>' +
@@ -726,6 +843,202 @@ async function performancePage(_req: IncomingMessage, res: ServerResponse) {
   send(res, 200, pageShell({ title: 'Leads · Performance', active: 'performance', body }));
 }
 
+// ================================================================ Campaigns (live Instantly pull)
+// Read-only mirror of the Instantly "Campaigns" screen: lists every campaign with
+// its native counters so you can see at a glance which one is doing well / getting
+// replies. Pulls live from the Instantly API (cached 2 min). Never sends anything.
+
+const CAMPAIGN_STATUS: Record<number, [string, string]> = {
+  0: ['Draft', '--dim'], 1: ['Active', '--good'], 2: ['Paused', '--warn'],
+  3: ['Completed', '--dim'], 4: ['Subsequences', '--acc'],
+};
+const statusPill = (s: number | undefined): string => {
+  const [label, color] = s == null ? ['—', '--dim'] : CAMPAIGN_STATUS[s] ?? (s < 0 ? ['Issue', '--bad'] : [`#${s}`, '--dim']);
+  return `<span class="pill" style="color:var(${color})">${esc(label)}</span>`;
+};
+
+// firstNum(obj, ...keys) → first finite value among the candidate field names (0 otherwise).
+const firstNum = (o: Record<string, unknown>, ...keys: string[]): number => {
+  for (const k of keys) { const v = o[k]; if (v != null && Number.isFinite(Number(v))) return Number(v); }
+  return 0;
+};
+
+// 2-minute cache so dashboard reloads don't hammer the Instantly API.
+let campaignCache: { at: number; campaigns: InstantlyCampaign[]; analytics: CampaignAnalytics[]; daily: DailyAnalytics[] } | null = null;
+const CAMPAIGN_TTL = 120_000;
+
+async function campaignsPage(_req: IncomingMessage, res: ServerResponse, url: URL) {
+  if (!instantlyEnabled()) {
+    const body = `
+<div class="panel">
+  <h3 style="margin-top:0">Connect Instantly to pull live campaign analytics</h3>
+  <p class="dim">No <code>INSTANTLY_API_KEY</code> is set, so this page can't reach your Instantly workspace yet.</p>
+  <ol style="line-height:1.9">
+    <li>In Instantly → <b>Settings → Integrations → API Keys</b>, create a key (an "all scopes" or analytics-read key is fine).</li>
+    <li>Local dev: add <code>INSTANTLY_API_KEY=…</code> to <code>~/app-discovery/.env</code> and restart <code>npm run serve:leads</code>.</li>
+    <li>Production: add the same variable in Vercel → Project → Settings → Environment Variables, then redeploy.</li>
+  </ol>
+  <p class="muted-note">This page only ever <b>reads</b> — it lists campaigns and their counters. It never starts, pauses, schedules, or sends anything.</p>
+</div>`;
+    return send(res, 200, pageShell({ title: 'Leads · Campaigns', active: 'campaigns', body }));
+  }
+
+  const refresh = url.searchParams.get('refresh') === '1';
+  let data = campaignCache;
+  if (refresh || !data || Date.now() - data.at > CAMPAIGN_TTL) {
+    try {
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+      const campaigns = await listCampaigns();
+      const [analytics, daily] = await Promise.all([
+        campaignAnalyticsByIds(campaigns.map((c) => c.id)),
+        dailyAnalytics(iso(new Date(Date.now() - 29 * 86_400_000)), iso(new Date())).catch(() => [] as DailyAnalytics[]),
+      ]);
+      data = campaignCache = { at: Date.now(), campaigns, analytics, daily };
+    } catch (err) {
+      const msg = String((err as { message?: string })?.message ?? err);
+      const hint = /401|403/.test(msg) ? ' — the API key looks invalid or lacks analytics scope.' : '';
+      const body = `<div class="panel" style="border-color:var(--bad)">
+        <h3 style="margin-top:0">Couldn't reach Instantly</h3>
+        <p>${esc(msg)}${esc(hint)}</p>
+        <p class="muted-note">Check <code>INSTANTLY_API_KEY</code>, then <a href="/leads/campaigns?refresh=1" style="color:var(--acc)">retry</a>.</p></div>`;
+      return send(res, 200, pageShell({ title: 'Leads · Campaigns', active: 'campaigns', body }));
+    }
+  }
+
+  const view = data!; // non-null past the cache block (success sets it; failure returned above)
+  const { campaigns, analytics, daily } = view;
+  const campById = new Map(campaigns.map((c) => [c.id, c]));
+  const anaById = new Map(analytics.filter((a) => a.campaign_id).map((a) => [a.campaign_id!, a]));
+
+  // Row per campaign (left-join analytics); append analytics with no matching campaign.
+  type Row = {
+    id: string; name: string; status: number | undefined;
+    leads: number; sent: number; contacted: number; opens: number; replies: number;
+    opps: number; bounced: number; reached: number; openRate: number; replyRate: number; bounceRate: number;
+    created: string;
+  };
+  const idsFromCampaigns = new Set(campaigns.map((c) => c.id));
+  const extraAnalytics = analytics.filter((a) => a.campaign_id && !idsFromCampaigns.has(a.campaign_id));
+  const rows: Row[] = [...campaigns, ...extraAnalytics.map((a) => ({ id: a.campaign_id!, name: a.campaign_name }))].map((c) => {
+    const a = (anaById.get(c.id) ?? {}) as Record<string, unknown>;
+    const meta = campById.get(c.id);
+    const leads = firstNum(a, 'leads_count');
+    const sent = firstNum(a, 'emails_sent_count');
+    const contacted = firstNum(a, 'contacted_count', 'new_leads_contacted_count');
+    const opens = firstNum(a, 'open_count_unique', 'open_count');
+    const replies = firstNum(a, 'reply_count_unique', 'reply_count');
+    const opps = firstNum(a, 'total_opportunities');
+    const bounced = firstNum(a, 'bounced_count');
+    const reached = contacted || sent; // people actually emailed → open/reply denominator (NOT list size)
+    return {
+      id: c.id, name: (c as InstantlyCampaign).name ?? (a.campaign_name as string) ?? c.id,
+      status: meta?.status,
+      leads, sent, contacted, opens, replies, opps, bounced, reached,
+      openRate: reached ? opens / reached : 0, replyRate: reached ? replies / reached : 0, bounceRate: sent ? bounced / sent : 0,
+      created: meta?.timestamp_created ?? '',
+    };
+  });
+
+  // Rank by reply rate (the "which is doing good" answer); unsent campaigns sink to the bottom.
+  rows.sort((a, b) => b.replyRate - a.replyRate || b.replies - a.replies || b.sent - a.sent);
+
+  const MIN_VOL = 20; // only campaigns that actually reached 20+ people count toward the mean / get flagged
+  const eligible = rows.filter((r) => r.reached >= MIN_VOL);
+  const meanReply = eligible.length ? eligible.reduce((s, r) => s + r.replyRate, 0) / eligible.length : 0;
+  const bestRate = Math.max(0, ...eligible.map((r) => r.replyRate));
+
+  const totSent = rows.reduce((s, r) => s + r.sent, 0);
+  const totReplies = rows.reduce((s, r) => s + r.replies, 0);
+  const totReached = rows.reduce((s, r) => s + r.reached, 0);
+  const totOpps = rows.reduce((s, r) => s + r.opps, 0);
+  const activeCount = rows.filter((r) => r.status === 1).length;
+
+  const stat = (label: string, value: string, sub = '') =>
+    `<div class="stat"><b>${value}</b><span>${esc(label)}${sub ? ` · ${esc(sub)}` : ''}</span></div>`;
+  const cards =
+    stat('Campaigns', String(rows.length), `${activeCount} active`) +
+    stat('Emails sent', totSent.toLocaleString()) +
+    stat('Replies', totReplies.toLocaleString(), `${pct(totReplies, totReached)} reply rate`) +
+    stat('Opportunities', totOpps.toLocaleString());
+
+  const tableRows = rows.map((r) => {
+    const top = r.reached >= MIN_VOL && bestRate > 0 && r.replyRate === bestRate;
+    const under = r.reached >= MIN_VOL && meanReply > 0 && r.replyRate < meanReply * 0.5;
+    const highBounce = r.sent >= MIN_VOL && r.bounceRate > 0.05;
+    const barW = bestRate > 0 ? Math.round((r.replyRate / bestRate) * 60) : 0;
+    const flags = [
+      top ? '<span class="pill new">🏆 top</span>' : '',
+      under ? '<span class="flag">⚠ low</span>' : '',
+      highBounce ? `<span class="flag">🚫 ${pct(r.bounced, r.sent)} bounce</span>` : '',
+    ].join(' ');
+    return `<tr${under ? ' style="outline:1px solid var(--bad)"' : ''}
+      data-name="${esc(r.name.toLowerCase())}" data-status="${r.status ?? 99}" data-leads="${r.leads}"
+      data-sent="${r.sent}" data-contacted="${r.contacted}" data-opens="${r.openRate}" data-replies="${r.replyRate}"
+      data-repliesn="${r.replies}" data-opps="${r.opps}" data-bounce="${r.bounceRate}" data-created="${esc(r.created)}">
+      <td><b>${esc(r.name)}</b> ${flags}</td>
+      <td>${statusPill(r.status)}</td>
+      <td class="num">${r.leads.toLocaleString()}</td>
+      <td class="num">${r.sent.toLocaleString()}</td>
+      <td class="num">${r.opens.toLocaleString()}<br><span class="dim">${pct(r.opens, r.reached)}</span></td>
+      <td class="num"><div style="display:flex;align-items:center;justify-content:flex-end;gap:7px">
+        <span><b>${r.replies}</b><br><span class="dim">${pct(r.replies, r.reached)}</span></span>
+        <span style="display:inline-block;width:${barW}px;height:8px;background:var(--good);border-radius:4px"></span></div></td>
+      <td class="num">${r.opps || '<span class="dim">–</span>'}</td>
+      <td class="num">${r.bounced || 0}<br><span class="dim">${pct(r.bounced, r.sent)}</span></td>
+      <td>${fmtDate(r.created)}</td></tr>`;
+  }).join('');
+
+  // 30-day workspace trend: replies (green) + sent (blue, scaled to its own axis), one SVG.
+  let trend = '';
+  if (daily.length) {
+    const byDate = new Map(daily.map((d) => [d.date?.slice(0, 10), d]));
+    const days: string[] = [];
+    for (let i = 29; i >= 0; i--) days.push(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10));
+    const repl = days.map((d) => firstNum((byDate.get(d) ?? {}) as Record<string, unknown>, 'unique_replies', 'replies'));
+    const sent = days.map((d) => firstNum((byDate.get(d) ?? {}) as Record<string, unknown>, 'sent'));
+    const W = 720, H = 140, maxR = Math.max(1, ...repl), maxS = Math.max(1, ...sent);
+    const poly = (vals: number[], max: number, color: string) =>
+      `<polyline points="${vals.map((v, x) => `${(x / 29) * W},${H - (v / max) * (H - 10)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+    trend = `<div class="panel"><h3 style="margin-top:0">Last 30 days
+      <span class="pill" style="border-left:8px solid var(--good)">replies (peak ${maxR})</span>
+      <span class="pill" style="border-left:8px solid var(--acc)">sent (peak ${maxS})</span></h3>
+      <svg width="${W}" height="${H}" style="max-width:100%">${poly(sent, maxS, '#4da3ff')}${poly(repl, maxR, '#3fcf8e')}</svg></div>`;
+  }
+
+  const pulled = new Date(view.at).toLocaleString();
+  const body = `
+<p class="dim">Live from your Instantly workspace — ranked by reply rate so the best (🏆) and weakest (⚠ &lt; half the mean) campaigns stand out.
+Cached 2 min · pulled ${esc(pulled)} · <a href="/leads/campaigns?refresh=1" style="color:var(--acc)">refresh now</a>. Read-only: nothing here sends.</p>
+<div>${cards}</div>
+${trend}
+<div class="panel"><h3 style="margin-top:0">All campaigns <span class="dim" style="font-weight:400">· click a column to sort</span></h3>
+<table id="camptbl"><thead><tr>
+  <th class="sorth" data-k="name">Campaign</th>
+  <th class="sorth" data-k="status">Status</th>
+  <th class="num sorth" data-k="leads">Leads</th>
+  <th class="num sorth" data-k="sent">Sent</th>
+  <th class="num sorth" data-k="opens">Opens</th>
+  <th class="num sorth" data-k="replies">Replies / rate</th>
+  <th class="num sorth" data-k="opps">Opps</th>
+  <th class="num sorth" data-k="bounce">Bounced</th>
+  <th class="sorth" data-k="created">Created</th>
+</tr></thead>
+<tbody id="camptb">${tableRows || '<tr><td colspan="9" class="dim">no campaigns found in this workspace</td></tr>'}</tbody></table></div>`;
+
+  const script = `
+const tb=document.getElementById('camptb'); const dir={};
+document.querySelectorAll('#camptbl th.sorth').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k, d=dir[k]=-(dir[k]||1), num=th.classList.contains('num');
+  [...tb.querySelectorAll('tr')].sort((a,b)=>{
+    const x=a.dataset[k]||'', y=b.dataset[k]||'';
+    return (num?(parseFloat(x)||0)-(parseFloat(y)||0):x.localeCompare(y))*d;
+  }).forEach(r=>tb.appendChild(r));
+  document.querySelectorAll('#camptbl th.sorth').forEach(t=>{t.textContent=t.textContent.replace(/ *[▾▴]$/,'');});
+  th.textContent=th.textContent.replace(/ *[▾▴]$/,'')+(d<0?' ▾':' ▴');
+}));`;
+  send(res, 200, pageShell({ title: 'Leads · Campaigns', active: 'campaigns', body, script }));
+}
+
 // ================================================================ Settings
 async function settingsPage(_req: IncomingMessage, res: ServerResponse, url: URL) {
   const db = getLeadsDb();
@@ -904,9 +1217,11 @@ export function registerRoutes(routes: Map<string, Handler>) {
   routes.set('POST /leads/approvals/approve', approveAction);
   routes.set('POST /leads/approvals/reject', rejectAction);
   routes.set('GET /leads/performance', performancePage);
+  routes.set('GET /leads/campaigns', campaignsPage); // live Instantly campaign analytics (read-only)
   routes.set('GET /leads/settings', settingsPage);
   routes.set('POST /leads/settings/resolve', resolveSuggestionAction);
   routes.set('POST /leads/clay', clayIngest); // Clay sends enriched contacts IN (token-gated by entry layer)
   routes.set('GET /leads/targets', targetsList); // Clay imports the target company list OUT (token-gated)
+  routes.set('GET /leads/export', leadsExport); // read-only JSON feed for external sites (token-gated by entry layer)
   routes.set('POST /leads/update', leadUpdate); // inline CRM: rep sets disposition / favorite / note
 }

@@ -55,6 +55,90 @@ export async function campaignAnalytics(campaignId: string): Promise<Record<stri
   return Array.isArray(res) ? (res[0] ?? null) : res;
 }
 
+// ------------------------------------------------------------- read-only listings
+// Everything below is GET-only and used by the Campaigns dashboard page. Per the
+// HARD RULE above, none of it starts/resumes/schedules/activates sending.
+
+export type InstantlyCampaign = {
+  id: string;
+  name?: string;
+  status?: number; // 0 draft · 1 active · 2 paused · 3 completed · 4 subsequences · <0 issue
+  timestamp_created?: string;
+  timestamp_updated?: string;
+};
+
+/** Native per-campaign counters as Instantly reports them (superset; fields vary). */
+export type CampaignAnalytics = {
+  campaign_id?: string;
+  campaign_name?: string;
+  leads_count?: number;
+  contacted_count?: number;
+  emails_sent_count?: number;
+  new_leads_contacted_count?: number;
+  open_count?: number;
+  open_count_unique?: number;
+  reply_count?: number;
+  reply_count_unique?: number;
+  link_click_count?: number;
+  link_click_count_unique?: number;
+  bounced_count?: number;
+  unsubscribed_count?: number;
+  completed_count?: number;
+  total_opportunities?: number;
+  total_opportunity_value?: number;
+  [k: string]: unknown;
+};
+
+/** Daily workspace-wide (or per-campaign) counters for the trend chart. */
+export type DailyAnalytics = { date: string; sent?: number; opened?: number; replies?: number; unique_opened?: number; unique_replies?: number; clicks?: number };
+
+/** All campaigns in the workspace (paginated). Read-only. */
+export async function listCampaigns(limit = 100): Promise<InstantlyCampaign[]> {
+  const out: InstantlyCampaign[] = [];
+  let startingAfter: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (startingAfter) qs.set('starting_after', startingAfter);
+    const res = await fetchJson<{ items?: InstantlyCampaign[]; next_starting_after?: string }>(
+      `${BASE}/campaigns?${qs}`, { service: 'instantly', minGapMs: 600, init: { headers: headers() } },
+    );
+    out.push(...(res.items ?? []));
+    if (!res.next_starting_after || !res.items?.length) break;
+    startingAfter = res.next_starting_after;
+  }
+  return out;
+}
+
+/**
+ * Analytics for the given campaigns. The endpoint with no params returns only a
+ * recent-activity subset (not all campaigns) and the `ids[]` form is ignored, so
+ * we pass the explicit repeated `ids=` form, chunked to keep the URL sane.
+ * Read-only.
+ */
+export async function campaignAnalyticsByIds(ids: string[]): Promise<CampaignAnalytics[]> {
+  const out: CampaignAnalytics[] = [];
+  for (let i = 0; i < ids.length; i += 25) {
+    const qs = ids.slice(i, i + 25).map((id) => `ids=${encodeURIComponent(id)}`).join('&');
+    const res = await fetchJson<CampaignAnalytics[] | CampaignAnalytics>(
+      `${BASE}/campaigns/analytics?${qs}`,
+      { service: 'instantly', minGapMs: 600, init: { headers: headers() } },
+    );
+    if (Array.isArray(res)) out.push(...res);
+    else if (res) out.push(res);
+  }
+  return out;
+}
+
+/** Daily counters between two YYYY-MM-DD dates (workspace-wide when no campaign id). Read-only. */
+export async function dailyAnalytics(startDate: string, endDate: string): Promise<DailyAnalytics[]> {
+  const qs = new URLSearchParams({ start_date: startDate, end_date: endDate });
+  const res = await fetchJson<DailyAnalytics[]>(
+    `${BASE}/campaigns/analytics/daily?${qs}`,
+    { service: 'instantly', minGapMs: 600, init: { headers: headers() } },
+  );
+  return Array.isArray(res) ? res : [];
+}
+
 /** Add one lead to a campaign. Never activates anything. */
 export async function pushLead(campaignId: string, lead: {
   email: string; company_name?: string; first_name?: string; last_name?: string; custom_variables?: Record<string, unknown>;

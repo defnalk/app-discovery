@@ -4,6 +4,7 @@ export const NAV = [
   { key: 'apps', label: 'Apps', href: '/' },
   { key: 'pipeline', label: 'Pipeline', href: '/leads' },
   { key: 'approvals', label: 'Approval Queue', href: '/leads/approvals' },
+  { key: 'campaigns', label: 'Campaigns', href: '/leads/campaigns' },
   { key: 'performance', label: 'Performance', href: '/leads/performance' },
   { key: 'strategy', label: 'Strategy', href: '/leads/strategy' },
   { key: 'settings', label: 'Settings', href: '/leads/settings' },
@@ -41,6 +42,7 @@ export function pageShell(opts: { title: string; active: string; body: string; s
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; }
+  th.sorth:hover { color:var(--acc); }
   tr:hover td { background:#1a2130; }
   input[type=text], input[type=search], select, input[type=number], input[type=date] {
     background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px; }
