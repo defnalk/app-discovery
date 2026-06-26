@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -58,6 +58,40 @@ function assertNoSecretLeak() {
     const txt = readFileSync(f, 'utf8');
     for (const s of secrets) if (txt.includes(s)) throw new Error(`SECURITY: a secret value leaked into ${path.basename(f)} — build aborted`);
   }
+}
+
+// --- Clothing / fashion brand filter -------------------------------------
+// The plays dashboard ranks consumer APPS worth (re)building. Single-brand
+// fashion/apparel retailers (Zara, H&M, UNIQLO, Myntra…) ship store apps that
+// chart under "Shopping" but are NOT build targets — you can't rebuild a clothing
+// label. Drop them here. Resale/marketplace apps (Vinted, Vestiaire, Back Market)
+// are platform plays, so they are deliberately KEPT.
+//
+// STRONG fashion words drop in any category; brand names + weaker retail words
+// drop only inside a Shopping-type category, so we never touch the many legit
+// Lifestyle apps (dating, astrology, home security) or design tools whose
+// developer legal name merely contains "moda".
+const SHOP_CATEGORIES = new Set([
+  'Shopping', 'Compras', '쇼핑', 'ショッピング', 'Winkelen', 'Einkaufen', 'Zakupy', 'Alışveriş',
+]);
+const FASHION_STRONG = /\b(cloth|clothing|apparel|fashion|footwear|sneaker|streetwear|menswear|womenswear|activewear|athleisure|sportswear|lingerie|knitwear|swimwear|textil|couture|garment|outfitter)\b/i;
+const FASHION_WEAK = /\b(moda|mode|shoes?|boutique|jeans)\b/i;
+const FASHION_BRANDS = [
+  'shein', 'zara', 'bershka', 'pull&bear', 'stradivarius', 'massimo dutti', 'uniqlo', 'primark', 'defacto',
+  'lc waikiki', 'koton', 'urban outfitters', 'abercrombie', 'hollister', 'lululemon', 'dr martens', 'foot locker',
+  'footlocker', 'jd sports', 'ssense', 'farfetch', 'boohoo', 'namshi', '6thstreet', 'brands for less', 'breuninger',
+  'asos', 'myntra', 'ajio', 'nykaa fashion', 'revolve', 'bonprix', 'zalando', 'aboutyou', 'about you', 'sinsay',
+  'modivo', 'answear', 'inditex', 'oysho', 'lefties', 'zalora', 'deichmann', 'vero moda', 'shoppers stop',
+  'max fashion', 'kiabi', 'cupshe', 'yesstyle', 'boozt', 'h&m', 'c&a', 'ccc',
+];
+const FASHION_BRAND_RE = new RegExp(
+  '(?<![a-z])(' + FASHION_BRANDS.map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![a-z])', 'i');
+
+function isClothingBrand(name: string | null, developer: string | null, category: string | null): boolean {
+  const blob = `${name ?? ''} ${developer ?? ''}`;
+  if (FASHION_STRONG.test(blob)) return true;
+  if (SHOP_CATEGORIES.has(category ?? '') && (FASHION_BRAND_RE.test(blob) || FASHION_WEAK.test(blob))) return true;
+  return false;
 }
 
 export async function buildDashboard() {
@@ -130,6 +164,12 @@ export async function buildDashboard() {
       };
     })
     .filter((r) => r != null);
+
+  // Drop single-brand clothing/fashion retailers — not buildable plays. See
+  // isClothingBrand above. Resale/marketplace apps are kept on purpose.
+  const beforeClothing = rows.length;
+  rows = rows.filter((r) => !isClothingBrand(r!.name, r!.developer, r!.category));
+  log.info(`dashboard: dropped ${beforeClothing - rows.length} clothing/fashion brand apps (not build targets)`);
 
   // Composite "play score" (0–100): how attractive each app is to build a play
   // of right now, combining every score we have — idea quality, momentum, an open
@@ -268,6 +308,8 @@ export async function buildDashboard() {
   .tabbtn { background:none; color:var(--dim); border:0; border-bottom:2px solid transparent; border-radius:0; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
   .tabbtn:hover { color:var(--txt); }
   .tabbtn.active { color:var(--txt); border-bottom-color:var(--acc); }
+  .tablink { color:var(--dim); text-decoration:none; padding:9px 14px; font-size:14px; font-weight:600; border-bottom:2px solid transparent; align-self:center; }
+  .tablink:hover { color:var(--txt); }
   .tabpane { display:none; }
   .tabpane.active { display:block; }
   th[title] { text-decoration:underline dotted var(--line); text-underline-offset:3px; }
@@ -329,7 +371,9 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="ideas">💡 Idea Radar</button>
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
   <button class="tabbtn" data-tab="submit">📝 Submit a play</button>
+  <button class="tabbtn" data-tab="advisor">🧭 Advisor</button>
   <button class="tabbtn" id="admin-tab" data-tab="admin" style="display:none">🛠 Admin</button>
+  <a class="tablink" href="/compete">🥊 Competitive</a>
   <span id="authbox" style="margin-left:auto;align-self:center"></span>
 </div>
 
@@ -399,6 +443,27 @@ export async function buildDashboard() {
   <datalist id="cat-list">${categories.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
 </section>
 
+<section class="tabpane" id="tab-advisor">
+  <p class="muted-note" style="margin:0 0 10px">Enter your app's current features and Claude compares them against competitors — surfacing feature gaps, differentiation angles, pricing/paywall moves, and quick wins. Grounded on the apps we track in your category.</p>
+  <div class="panel" style="max-width:720px">
+    <div id="advisor-gate" class="dim">Please <a href="#" id="advisor-signin" style="color:var(--acc)">sign in</a> to run the advisor.</div>
+    <form id="advisor-form" style="display:none">
+      <div style="display:grid;gap:10px;max-width:640px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <label style="flex:1;min-width:200px">Your app name<br><input id="adv-name" type="text" style="width:100%" maxlength="200" required></label>
+          <label style="flex:1;min-width:160px">Category<br><input id="adv-cat" type="text" list="cat-list" style="width:100%" maxlength="100" placeholder="e.g. Shopping, Health &amp; Fitness"></label>
+        </div>
+        <label>Main / free features<br><textarea id="adv-free" rows="4" style="width:100%" maxlength="4000" placeholder="One per line — what the app does today, and what's free"></textarea></label>
+        <label>Paid / premium features<br><textarea id="adv-paid" rows="4" style="width:100%" maxlength="4000" placeholder="One per line — what's behind the paywall / subscription"></textarea></label>
+        <label>Competitors <span class="dim">(optional)</span><br><input id="adv-comp" type="text" style="width:100%" maxlength="600" placeholder="Comma-separated, e.g. Strava, Nike Run Club"></label>
+        <label>Notes for Claude <span class="dim">(optional)</span><br><textarea id="adv-notes" rows="2" style="width:100%" maxlength="1500" placeholder="Anything else — target market, current pricing, goals"></textarea></label>
+        <div style="display:flex;gap:10px;align-items:center"><button type="submit" id="adv-go">Generate report</button><span id="adv-msg" class="dim"></span></div>
+      </div>
+    </form>
+    <div id="advisor-report" style="margin-top:16px"></div>
+  </div>
+</section>
+
 <section class="tabpane" id="tab-admin">
   <p class="muted-note" style="margin:0 0 10px">Admin — every manager's claimed plays &amp; submitted ideas. Visible to Defne &amp; Hussain only.</p>
   <div id="admin-body" class="panel dim">Sign in as an admin to view.</div>
@@ -407,9 +472,8 @@ export async function buildDashboard() {
 <div id="login-modal">
   <div class="login-card panel">
     <h3 style="margin:0 0 8px">Sign in</h3>
-    <p class="muted-note" style="margin:0 0 10px">Enter your name and the shared team passcode to claim plays and submit ideas.</p>
-    <input id="login-name" type="text" placeholder="Your name" style="width:100%;margin-bottom:8px" maxlength="60">
-    <input id="login-pass" type="password" placeholder="Team passcode" style="width:100%;margin-bottom:10px">
+    <p class="muted-note" style="margin:0 0 10px">Enter your name to claim plays and submit ideas.</p>
+    <input id="login-name" type="text" placeholder="Your name" style="width:100%;margin-bottom:10px" maxlength="60">
     <div style="display:flex;gap:8px"><button id="login-go">Sign in</button><button class="ghost" id="login-cancel">Cancel</button></div>
     <p id="login-msg" class="dim" style="margin:8px 0 0;min-height:1em"></p>
   </div>
@@ -630,13 +694,13 @@ function renderAuth(){
 function openLogin(){ $('#login-msg').textContent=''; $('#login-modal').classList.add('show'); $('#login-name').focus(); }
 function closeLogin(){ $('#login-modal').classList.remove('show'); }
 async function doLogin(){
-  const name = $('#login-name').value.trim(), passcode = $('#login-pass').value;
+  const name = $('#login-name').value.trim();
   if (!name) { $('#login-msg').textContent = 'Enter your name.'; return; }
   $('#login-msg').textContent = 'Signing in…';
-  const r = await api('/api/login', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name, passcode }) });
+  const r = await api('/api/login', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name }) });
   if (!r.ok) { $('#login-msg').textContent = r.data.error || 'Sign in failed.'; return; }
   setMe({ name: r.data.name, role: r.data.role });
-  $('#login-pass').value=''; closeLogin();
+  closeLogin();
   await loadState(); refreshAll();
 }
 async function loadState(){
@@ -645,7 +709,7 @@ async function loadState(){
   if (r.status === 401) { setMe(null); CLAIMS = {}; return; }
   if (r.ok) { CLAIMS = {}; (r.data.claims||[]).forEach(c => { if (c.subject_type === 'app') CLAIMS[c.subject_id] = c; }); if (r.data.me) setMe(r.data.me); }
 }
-function refreshAll(){ renderHome(); render(); renderSubmitGate(); if (ME && ME.role==='admin') renderAdmin(); }
+function refreshAll(){ renderHome(); render(); renderSubmitGate(); renderAdvisorGate(); if (ME && ME.role==='admin') renderAdmin(); }
 async function doClaim(id, name, cat){
   if (!ME) { openLogin(); return; }
   const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
@@ -695,6 +759,22 @@ function renderHome(){
 function renderSubmitGate(){
   const gate = $('#submit-gate'), form = $('#submit-form'); if (!gate||!form) return;
   gate.style.display = ME ? 'none' : ''; form.style.display = ME ? '' : 'none';
+}
+function renderAdvisorGate(){
+  const gate = $('#advisor-gate'), form = $('#advisor-form'); if (!gate||!form) return;
+  gate.style.display = ME ? 'none' : ''; form.style.display = ME ? '' : 'none';
+}
+function renderAdvisorReport(rep, grounded){
+  const list = (arr, fn) => (arr&&arr.length) ? '<ul style="margin:4px 0 0;padding-left:18px">'+arr.map(fn).join('')+'</ul>' : '<span class="dim">none</span>';
+  const sec = (title, inner) => '<div class="panel" style="margin-top:10px"><div style="font-weight:600;margin-bottom:6px">'+title+'</div>'+inner+'</div>';
+  let h = sec('📍 Positioning', '<p style="margin:0">'+escq(rep.positioning||'')+'</p>');
+  h += sec('🕳️ Feature gaps', list(rep.feature_gaps, g => '<li style="margin-bottom:5px"><b>'+escq(g.feature)+'</b>'+(g.seen_in?' <span class="dim">— '+escq(g.seen_in)+'</span>':'')+'<br><span class="dim">'+escq(g.why_it_matters||'')+'</span></li>'));
+  h += sec('✨ Differentiation', list(rep.differentiation, d => '<li style="margin-bottom:5px"><b>'+escq(d.idea)+'</b><br><span class="dim">'+escq(d.rationale||'')+'</span></li>'));
+  const pr = rep.pricing||{};
+  h += sec('💳 Pricing &amp; paywall', '<p style="margin:0 0 6px">'+escq(pr.assessment||'')+'</p>'+list(pr.recommendations, r => '<li>'+escq(r)+'</li>'));
+  h += sec('⚡ Quick wins', list(rep.quick_wins, w => '<li>'+escq(w)+'</li>'));
+  if (grounded && grounded.length) h += '<p class="muted-note">Compared against tracked apps: '+grounded.map(escq).join(', ')+'</p>';
+  $('#advisor-report').innerHTML = h;
 }
 async function renderAdmin(){
   const el = $('#admin-body'); if (!el) return;
@@ -784,6 +864,7 @@ function showTab(t) {
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
   if (t === 'admin') renderAdmin();
   if (t === 'submit') renderSubmitGate();
+  if (t === 'advisor') renderAdvisorGate();
   if (('#/' + t) !== location.hash) location.hash = '#/' + t;
 }
 document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -800,7 +881,7 @@ document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
 // Auth + submit wiring
 $('#login-go').onclick = doLogin;
 $('#login-cancel').onclick = closeLogin;
-$('#login-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+$('#login-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 const ssi = $('#submit-signin'); if (ssi) ssi.onclick = (e) => { e.preventDefault(); openLogin(); };
 const sform = $('#submit-form');
 if (sform) sform.onsubmit = async (e) => {
@@ -811,6 +892,24 @@ if (sform) sform.onsubmit = async (e) => {
   if (r.status === 401) { setMe(null); openLogin(); return; }
   $('#sf-msg').textContent = r.ok ? '✓ Submitted, thank you!' : (r.data.error || 'Failed');
   if (r.ok) { ['sf-name','sf-cat','sf-market','sf-pitch'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
+};
+
+// Advisor wiring
+const asi = $('#advisor-signin'); if (asi) asi.onclick = (e) => { e.preventDefault(); openLogin(); };
+const aform = $('#advisor-form');
+if (aform) aform.onsubmit = async (e) => {
+  e.preventDefault();
+  if (!ME) { openLogin(); return; }
+  const go = $('#adv-go');
+  go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20s';
+  const r = await api('/api/advisor', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
+    appName: $('#adv-name').value, category: $('#adv-cat').value, freeFeatures: $('#adv-free').value,
+    paidFeatures: $('#adv-paid').value, competitors: $('#adv-comp').value, notes: $('#adv-notes').value }) });
+  go.disabled = false;
+  if (r.status === 401) { setMe(null); openLogin(); $('#adv-msg').textContent=''; return; }
+  if (!r.ok) { $('#adv-msg').textContent = (r.data && r.data.error) || 'Failed'; return; }
+  $('#adv-msg').textContent = '✓ Report ready';
+  renderAdvisorReport(r.data.report, r.data.grounded_on);
 };
 
 // Shareable hash routing: #/plays, #/admin … and deep links #/app/<id>
