@@ -356,15 +356,28 @@ export async function buildDashboard() {
   .hero-h em { font-style:italic; color:var(--go); }
   .hero .sub { color:var(--muted); font-size:15px; max-width:62ch; margin:0; }
   tr.approw.play-top td:first-child { box-shadow: inset 3px 0 0 0 var(--good); }
-  .playbadge { display:inline-block; min-width:34px; text-align:center; padding:1px 6px; border-radius:99px; font-size:11px; font-weight:700; background:#10301f; color:var(--good); margin-left:6px; }
-  .play-hi { color: var(--good); font-weight:700; }
+  .playbadge { display:inline-block; min-width:30px; text-align:center; padding:1px 6px; border-radius:99px; font-size:10px; font-weight:700; background:var(--go-tint); color:var(--go-dark); margin-left:7px; font-family:var(--mono); vertical-align:middle; }
+  .play-hi { color: var(--go-dark); font-weight:800; }
+  /* Play score = the answer: make it dominant. First column, big display numerals. */
+  #t tbody td:first-child b { font-family:var(--display); font-size:19px; font-weight:800; line-height:1; }
+  #t tbody td:first-child b.play-hi { font-size:21px; }
+  /* claimed rows: clearer ownership cue than dimming alone */
+  tr.approw.claimed td:first-child { box-shadow: inset 3px 0 0 0 var(--amber); }
+  /* momentum-as-shape + active-filter chips */
+  .mom-cell { display:inline-flex; align-items:center; gap:5px; justify-content:flex-end; }
+  .mom-arrow { font-size:11px; line-height:1; }
+  .active-filters { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }
+  .active-filters:empty { display:none; }
+  .af-chip { font-family:var(--mono); font-size:11.5px; font-weight:500; padding:4px 9px; border-radius:20px; background:var(--go-tint); border:1px solid transparent; color:var(--go-dark); cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .af-chip:hover { background:#D9EBE2; } .af-chip .af-x { font-weight:700; opacity:.7; }
+  .af-clear { font-family:var(--sans); font-size:12px; background:transparent; color:var(--muted); border:0; cursor:pointer; padding:4px 6px; } .af-clear:hover { color:var(--ink); }
   .idea-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:10px; }
   .idea { border:1px solid var(--line); border-radius:10px; padding:11px 13px; background:var(--bg); font-size:13px; }
   .idea-top { border-color:var(--go); background:var(--go-tint); }
   .idea-head { display:flex; align-items:center; gap:8px; }
   .idea-head b { font-size:14px; }
   .idea-play { display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:24px; padding:0 6px; border-radius:6px; background:var(--line); font-weight:700; font-variant-numeric:tabular-nums; }
-  .idea-play.play-hi { background:#10301f; color:var(--good); }
+  .idea-play.play-hi { background:var(--go-tint); color:var(--go-dark); }
   .idea-src { margin-left:auto; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); border:1px solid var(--line); border-radius:99px; padding:1px 7px; }
   .idea-why { color:var(--dim); margin-top:6px; }
   .idea-link { display:inline-block; margin-top:7px; color:var(--acc); font-size:12px; text-decoration:none; }
@@ -410,7 +423,7 @@ export async function buildDashboard() {
   .hl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:10px; }
   .hl-card { display:flex; align-items:center; gap:10px; text-align:left; width:100%; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; color:var(--txt); font:inherit; }
   .hl-card:hover { border-color:var(--acc); }
-  .hl-play { display:inline-flex; align-items:center; justify-content:center; min-width:34px; height:30px; border-radius:7px; background:#10301f; color:var(--good); font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
+  .hl-play { display:inline-flex; align-items:center; justify-content:center; min-width:34px; height:30px; border-radius:7px; background:var(--go-tint); color:var(--go-dark); font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
   .hl-name { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hl-meta { color:var(--dim); font-size:11px; flex:none; }
   #login-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; align-items:center; justify-content:center; }
@@ -502,6 +515,7 @@ export async function buildDashboard() {
     <button class="ghost" id="view-toggle" type="button" title="Toggle compact / detailed columns">⊞ Detailed</button>
     <span class="dim" id="count"></span>
   </div>
+  <div id="active-filters" class="active-filters"></div>
   <div class="panel" style="overflow-x:auto">
   <table id="t"><thead><tr>
     <th data-k="play" class="num" title="Build-worthiness 0-100: idea + momentum + open market + build speed + traction">Play ▾</th>
@@ -679,6 +693,23 @@ function clearFilters(){
   document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === ''));
   render();
 }
+function clearOneFilter(k){
+  if (k === 'q') { $('#q').value = ''; }
+  else if (k === 'geo' || k === 'cat' || k === 'seen' || k === 'mom') {
+    const el = $('#'+k); if (el) el.value = '';
+    if (k === 'cat') document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === ''));
+  } else { const el = $('#'+k); if (el) el.checked = false; }
+  render();
+}
+// Momentum as a shape: rank-velocity arrow (▲ rising / ▼ falling) + colour, not a bare number.
+function momCell(r){
+  let best = null;
+  for (const d of (r.deltas || [])) { if (d.now != null && (best == null || d.now < best.now)) best = d; }
+  const vel = best && best.vel != null ? best.vel : 0;
+  const arrow = vel > 0 ? '▲' : vel < 0 ? '▼' : '·';
+  const col = vel > 0 ? 'var(--go)' : vel < 0 ? 'var(--rust)' : 'var(--faint)';
+  return '<span class="mom-cell"><span class="mom-arrow" style="color:' + col + '">' + arrow + '</span><b>' + r.momentum.toFixed(2) + '</b></span>';
+}
 function applyView(){
   const t = $('#t'); if (!t) return;
   let v; try { v = localStorage.getItem('play_view') || 'compact'; } catch(e) { v = 'compact'; }
@@ -705,6 +736,21 @@ function render() {
   const shown = rows.slice(0, CAP);
   $('#count').innerHTML = rows.length <= CAP ? (rows.length + ' shown') : '<span class="results-badge">top ' + CAP + ' of ' + rows.length + ', narrow by category/search</span>';
   saveFilters();
+  (function(){
+    const af = []; const qraw = $('#q').value, sv = $('#seen').value;
+    if (qraw) af.push(['q','Search: '+qraw]);
+    if (geo) af.push(['geo', geo === '__large' ? 'Large markets' : 'Country: '+geo.toUpperCase()]);
+    if (cat) af.push(['cat', cat]);
+    if (sv) af.push(['seen','Last '+sv+'d']);
+    if (mom != null) af.push(['mom','Momentum ≥ '+mom]);
+    if (gap) af.push(['gap','Geo-gap only']);
+    if (availOnly) af.push(['avail','Available only']);
+    if (mineOnly) af.push(['mine','My claims']);
+    const afEl = $('#active-filters'); if (!afEl) return;
+    afEl.innerHTML = af.length ? af.map(x => '<button class="af-chip" data-k="'+x[0]+'">'+escq(x[1])+' <span class="af-x">×</span></button>').join('') + '<button class="af-clear">Clear all</button>' : '';
+    afEl.querySelectorAll('.af-chip').forEach(btn => btn.onclick = () => clearOneFilter(btn.dataset.k));
+    const ac = afEl.querySelector('.af-clear'); if (ac) ac.onclick = clearFilters;
+  })();
   if (!shown.length) {
     $('#t tbody').innerHTML = '<tr><td colspan="13"><div style="text-align:center;padding:46px 20px;color:var(--dim)">' +
       '<div style="font-size:15px;color:var(--txt);font-weight:600;margin-bottom:6px">No plays match these filters</div>' +
@@ -722,7 +768,7 @@ function render() {
     '<td>' + r.geos.map(g => '<span class="pill' + (r.new_geos.includes(g) ? ' new' : '') + '">' + g + '</span>').join('') +
       (r.geo_gap.length ? '<br><span class="dim">gap:</span> ' + r.geo_gap.map(g => '<span class="pill gap">' + g + '</span>').join('') : '') + '</td>' +
     '<td>' + r.spark + '</td>' +
-    '<td class="num"><b>' + r.momentum.toFixed(2) + '</b></td>' +
+    '<td class="num">' + momCell(r) + '</td>' +
     '<td class="num">' + (r.idea != null ? '<b>' + r.idea + '</b>' : '<span class="dim">-</span>') + '</td>' +
     '<td>' + (r.build ? '<span class="pill' + (r.build === 'weekend' || r.build === 'few_days' ? ' new' : '') + '">' + escq(r.build) + '</span>' : '<span class="dim">-</span>') + '</td>' +
     '<td class="num">' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '<span class="dim">-</span>') + '</td>' +
