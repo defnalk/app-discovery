@@ -19,7 +19,7 @@ export const embedJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003
 export function pageShell(opts: { title: string; active: string; body: string; script?: string; app?: 'apps' | 'leads' }) {
   const app = opts.app ?? (opts.active === 'apps' ? 'apps' : 'leads');
   const tabs = app === 'apps' ? NAV.filter((n) => n.key === 'apps') : NAV.filter((n) => n.key !== 'apps');
-  const brand = app === 'apps' ? 'Play Database' : '8x leads';
+  const brand = app === 'apps' ? 'Plays Database' : '8x leads';
   const tab = (n: (typeof NAV)[number]) =>
     `<a href="${n.href}" class="tab${opts.active === n.key ? ' active' : ''}">${n.label}</a>`;
   return `<!doctype html>

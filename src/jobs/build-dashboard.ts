@@ -931,7 +931,7 @@ renderTopCharts();
 routeFromHash();
 loadState().then(refreshAll);`;
 
-  const html = pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body, script });
+  const html = pageShell({ title: 'Plays Database', active: 'apps', app: 'apps', body, script });
   const out = path.join(process.cwd(), 'public', 'index.html');
   mkdirSync(path.dirname(out), { recursive: true });
   // Build-integrity gate: a half-failed ingest must abort the build, not silently

@@ -71,7 +71,7 @@ async function main() {
     appsRoutes.set('GET /', (_req, res) => {
       const file = path.join(process.cwd(), 'public', 'index.html');
       if (!existsSync(file)) {
-        return send(res, 200, pageShell({ title: 'Play Database', active: 'apps', app: 'apps', body: '<div class="panel">No dashboard built yet — run <code>npm run dashboard</code>.</div>' }));
+        return send(res, 200, pageShell({ title: 'Plays Database', active: 'apps', app: 'apps', body: '<div class="panel">No dashboard built yet — run <code>npm run dashboard</code>.</div>' }));
       }
       rebuildIfStale(file); // serve current copy now; next refresh gets the fresh build
       send(res, 200, readFileSync(file, 'utf8'));
