@@ -141,7 +141,7 @@ export default async function handler(req: IncomingMessage & { method?: string }
     const client = new Anthropic();
     const response = await client.messages.create({
       model,
-      max_tokens: 3000,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: advisorPrompt({ appName, category, freeFeatures, paidFeatures, competitors, notes, catalog }) }],
       output_config: { format: { type: 'json_schema', schema: ADVISOR_SCHEMA as unknown as Record<string, unknown> } },
     });
