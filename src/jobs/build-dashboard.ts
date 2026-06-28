@@ -315,6 +315,11 @@ export async function buildDashboard() {
   .stat-chip { border:1px solid var(--line); border-radius:10px; padding:8px 14px; background:var(--panel); }
   .stat-chip b { font-size:18px; display:block; line-height:1.15; }
   .stat-chip span { color:var(--dim); font-size:11px; }
+  .stat-chip[data-go] { cursor:pointer; transition:border-color .15s var(--ease), transform .12s var(--ease); }
+  .stat-chip[data-go]:hover { border-color:var(--acc); transform:translateY(-1px); }
+  .hero-cta { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .tabpane.active { animation:paneIn .18s var(--ease); }
   .tabs { display:flex; gap:4px; margin:16px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .tabbtn { background:none; color:var(--dim); border:0; border-bottom:2px solid transparent; border-radius:0; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
   .tabbtn:hover { color:var(--txt); }
@@ -367,16 +372,24 @@ export async function buildDashboard() {
     .idea-grid,.hl-grid,#tc-grid{ grid-template-columns:1fr!important; }
     .login-card{ max-height:90vh; overflow-y:auto; }
     .hero p{ font-size:13px; }
-    #t th:nth-child(n+6), #t td:nth-child(n+6){ display:none; } /* keep Play/App/Claim/Category/Geos on phones; full detail on tap */
+    #t th:nth-child(n+5), #t td:nth-child(n+5){ display:none; } /* phones: Play/App/Claim/Category only; full detail on tap */
+    .hero-cta button{ flex:1; min-width:140px; padding:11px 14px; } /* thumb-friendly full-width CTAs */
+    #view-toggle{ margin-left:0; }
+    .filters{ gap:8px; }
+    .stats{ gap:8px; }
   }
 </style>
 <div class="hero">
   <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
   <div class="stats">
-    <div class="stat-chip"><b>${totalTracked.toLocaleString()}</b><span>apps tracked · ${geos.length} geos</span></div>
-    <div class="stat-chip"><b>${Math.min(100, rows.length)}</b><span>top plays · green</span></div>
-    <div class="stat-chip"><b>${ideas.length}</b><span>fresh ideas</span></div>
-    <div class="stat-chip"><b>${esc(latestDay)}</b><span>chart data</span></div>
+    <div class="stat-chip" data-go="plays" role="button" tabindex="0" title="Browse all tracked apps"><b>${totalTracked.toLocaleString()}</b><span>apps tracked · ${geos.length} geos</span></div>
+    <div class="stat-chip" data-go="plays" role="button" tabindex="0" title="See the top plays"><b>${Math.min(100, rows.length)}</b><span>top plays · green</span></div>
+    <div class="stat-chip" data-go="ideas" role="button" tabindex="0" title="See fresh app ideas"><b>${ideas.length}</b><span>fresh ideas</span></div>
+    <div class="stat-chip" data-go="charts" role="button" tabindex="0" title="Open the charts"><b>${esc(latestDay)}</b><span>chart data</span></div>
+  </div>
+  <div class="hero-cta">
+    <button id="cta-plays" type="button">🎯 Browse top plays</button>
+    <button class="ghost" id="cta-submit" type="button">📝 Submit a play</button>
   </div>
 </div>
 <div class="tabs">
@@ -935,6 +948,13 @@ if ($('#view-toggle')) $('#view-toggle').onclick = () => {
   try { localStorage.setItem('play_view', compact ? 'detailed' : 'compact'); } catch(e) {}
   applyView();
 };
+document.querySelectorAll('.stat-chip[data-go]').forEach(c => {
+  const go = () => showTab(c.dataset.go);
+  c.onclick = go;
+  c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+});
+if ($('#cta-plays')) $('#cta-plays').onclick = () => showTab('plays');
+if ($('#cta-submit')) $('#cta-submit').onclick = () => showTab('submit');
 
 // Tabs — show one focused section at a time
 function showTab(t) {
