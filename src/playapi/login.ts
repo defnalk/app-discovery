@@ -1,17 +1,16 @@
-/** POST /api/login {name, passcode} → verify passcode server-side, upsert manager,
- *  derive role, set HMAC-signed HttpOnly cookie. Fails closed if secrets unset. */
+/** POST /api/login {name} → upsert manager, derive role, set HMAC-signed HttpOnly
+ *  cookie. Name-only sign-in (no passcode); identity is still required so claims have
+ *  an owner. Fails closed if the session secret is unset. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getServiceClient, signToken, newSession, constantTimeEqual, setSessionCookie, isAdminName, readJsonBody, json, str, type Role } from './_lib.ts';
+import { getServiceClient, signToken, newSession, setSessionCookie, isAdminName, readJsonBody, json, str, type Role } from './_lib.ts';
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
-  const passcode = process.env.PLAY_TEAM_PASSCODE;
-  if (!passcode || !process.env.PLAY_SESSION_SECRET) return json(res, 500, { error: 'server not configured' });
+  if (!process.env.PLAY_SESSION_SECRET) return json(res, 500, { error: 'server not configured' });
 
-  const body = await readJsonBody<{ name?: string; passcode?: string }>(req);
+  const body = await readJsonBody<{ name?: string }>(req);
   const name = str(body.name, 60).trim();
   if (!name) return json(res, 400, { error: 'name required' });
-  if (!constantTimeEqual(str(body.passcode, 200), passcode)) return json(res, 401, { error: 'wrong passcode' });
 
   const sb = getServiceClient();
   const { data: existing } = await sb.from('play_managers').select('name, role').eq('name', name).maybeSingle();
