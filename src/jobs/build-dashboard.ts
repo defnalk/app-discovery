@@ -479,8 +479,8 @@ export async function buildDashboard() {
 <div id="login-modal">
   <div class="login-card panel">
     <h3 style="margin:0 0 8px">Sign in</h3>
-    <p class="muted-note" style="margin:0 0 10px">Enter your name to claim plays and submit ideas.</p>
-    <input id="login-name" type="text" placeholder="Your name" style="width:100%;margin-bottom:10px" maxlength="60">
+    <p class="muted-note" style="margin:0 0 10px">Sign in with your <b>8x.social</b> email to claim plays and submit ideas.</p>
+    <input id="login-name" type="email" placeholder="you@8x.social" autocomplete="email" style="width:100%;margin-bottom:10px" maxlength="120">
     <div style="display:flex;gap:8px"><button id="login-go">Sign in</button><button class="ghost" id="login-cancel">Cancel</button></div>
     <p id="login-msg" class="dim" style="margin:8px 0 0;min-height:1em"></p>
   </div>
@@ -701,10 +701,10 @@ function renderAuth(){
 function openLogin(){ $('#login-msg').textContent=''; $('#login-modal').classList.add('show'); $('#login-name').focus(); }
 function closeLogin(){ $('#login-modal').classList.remove('show'); }
 async function doLogin(){
-  const name = $('#login-name').value.trim();
-  if (!name) { $('#login-msg').textContent = 'Enter your name.'; return; }
+  const email = $('#login-name').value.trim();
+  if (!email || !email.includes('@')) { $('#login-msg').textContent = 'Enter your 8x.social email.'; return; }
   $('#login-msg').textContent = 'Signing in…';
-  const r = await api('/api/login', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name }) });
+  const r = await api('/api/login', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ email }) });
   if (!r.ok) { $('#login-msg').textContent = r.data.error || 'Sign in failed.'; return; }
   setMe({ name: r.data.name, role: r.data.role });
   closeLogin();
