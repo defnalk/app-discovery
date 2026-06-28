@@ -356,6 +356,9 @@ export async function buildDashboard() {
   .cw-timer.cw-urgent { color:var(--bad); font-weight:700; }
   .results-badge { background:var(--warn); color:#06121f; padding:3px 8px; border-radius:6px; font-weight:600; font-size:11px; }
   .hl-claimed { margin-left:auto; font-size:10px; color:var(--warn); flex:none; white-space:nowrap; }
+  #view-toggle { margin-left:auto; }
+  /* Compact view: hide detail/verification cols (Geos 5, Rank14d 6, Satur 10, Ratings 11, Fact 12, First 13) — keep Play/App/Claim/Category/Momentum/Idea/Build, plus the row-tap detail. */
+  #t.compact th:nth-child(5),#t.compact td:nth-child(5),#t.compact th:nth-child(6),#t.compact td:nth-child(6),#t.compact th:nth-child(10),#t.compact td:nth-child(10),#t.compact th:nth-child(11),#t.compact td:nth-child(11),#t.compact th:nth-child(12),#t.compact td:nth-child(12),#t.compact th:nth-child(13),#t.compact td:nth-child(13){ display:none; }
   @media (max-width:1024px){ .idea-grid,.hl-grid,#tc-grid{ grid-template-columns:repeat(2,1fr)!important; } }
   @media (max-width:640px){
     main{ padding:12px 12px; }
@@ -407,6 +410,7 @@ export async function buildDashboard() {
     <label><input type="checkbox" id="gap"> geo-gap only</label>
     <label><input type="checkbox" id="avail"> available only</label>
     <label id="mine-lbl" style="display:none"><input type="checkbox" id="mine"> my claims</label>
+    <button class="ghost" id="view-toggle" type="button" title="Toggle compact / detailed columns">⊞ Detailed</button>
     <span class="dim" id="count"></span>
   </div>
   <div class="panel" style="overflow-x:auto">
@@ -554,6 +558,13 @@ function clearFilters(){
   ['gap','avail','mine'].forEach(id => { const el = $('#'+id); if (el && el.checked !== undefined) el.checked = false; });
   document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === ''));
   render();
+}
+function applyView(){
+  const t = $('#t'); if (!t) return;
+  let v; try { v = localStorage.getItem('play_view') || 'compact'; } catch(e) { v = 'compact'; }
+  const compact = v !== 'detailed';
+  t.classList.toggle('compact', compact);
+  const b = $('#view-toggle'); if (b) b.textContent = compact ? '⊞ Detailed' : '⊟ Compact';
 }
 function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
@@ -919,6 +930,11 @@ const debouncedRender = () => { clearTimeout(_rt); _rt = setTimeout(render, 200)
 if ($('#mine')) $('#mine').addEventListener('input', render);
 $('#avail').addEventListener('change', () => { if ($('#avail').checked && $('#mine')) $('#mine').checked = false; });
 if ($('#mine')) $('#mine').addEventListener('change', () => { if ($('#mine').checked) $('#avail').checked = false; });
+if ($('#view-toggle')) $('#view-toggle').onclick = () => {
+  const compact = $('#t').classList.contains('compact');
+  try { localStorage.setItem('play_view', compact ? 'detailed' : 'compact'); } catch(e) {}
+  applyView();
+};
 
 // Tabs — show one focused section at a time
 function showTab(t) {
@@ -998,6 +1014,7 @@ loadFilters();
 renderAuth();
 renderHome();
 render();
+applyView();
 renderTopCharts();
 routeFromHash();
 loadState().then(refreshAll);`;
