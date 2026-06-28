@@ -949,10 +949,19 @@ if (aform) aform.onsubmit = async (e) => {
   e.preventDefault();
   if (!ME) { openLogin(); return; }
   const go = $('#adv-go');
-  go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20s';
-  const r = await api('/api/advisor', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({
-    appName: $('#adv-name').value, category: $('#adv-cat').value, freeFeatures: $('#adv-free').value,
-    paidFeatures: $('#adv-paid').value, competitors: $('#adv-comp').value, notes: $('#adv-notes').value }) });
+  go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20–30s';
+  // Direct fetch with a long timeout — the shared api() helper aborts at 10s and
+  // retries, which is wrong for a ~20-30s LLM call (it surfaces as "network error").
+  let r;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 70000);
+    const res = await fetch('/api/advisor', { method:'POST', credentials:'include', headers:{'content-type':'application/json'}, body: JSON.stringify({
+      appName: $('#adv-name').value, category: $('#adv-cat').value, freeFeatures: $('#adv-free').value,
+      paidFeatures: $('#adv-paid').value, competitors: $('#adv-comp').value, notes: $('#adv-notes').value }), signal: ctrl.signal });
+    clearTimeout(timer);
+    r = { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) };
+  } catch (err) { r = { ok: false, status: 0, data: { error: 'timed out — please try again' } }; }
   go.disabled = false;
   if (r.status === 401) { setMe(null); openLogin(); $('#adv-msg').textContent=''; return; }
   if (!r.ok) { $('#adv-msg').textContent = (r.data && r.data.error) || 'Failed'; return; }
