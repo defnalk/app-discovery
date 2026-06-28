@@ -312,7 +312,23 @@ export async function buildDashboard() {
   body { background:var(--paper); color:var(--ink); font-family:var(--sans); }
   h1,h2,h3,h4 { font-family:var(--display); letter-spacing:-.02em; }
   header { background:linear-gradient(180deg,var(--surface),var(--paper)); }
-  header h1 { font-family:var(--display); font-weight:800; }
+  header h1 { font-family:var(--display); font-weight:800; display:inline-flex; align-items:center; gap:11px; }
+  header h1::before { content:'P'; display:grid; place-items:center; width:34px; height:34px; border-radius:9px; background:var(--ink); color:var(--paper); font-size:19px; transform:rotate(-4deg); flex:none; }
+  .tour-overlay { position:fixed; inset:0; background:rgba(27,27,26,.42); z-index:90; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .tour-overlay.hidden { display:none; }
+  .tour-card { max-width:520px; width:100%; max-height:88vh; overflow-y:auto; padding:0; }
+  .tour-head { padding:24px 26px 16px; border-bottom:1px solid var(--line); background:repeating-linear-gradient(90deg,transparent 0 38px,rgba(14,124,102,.05) 38px 39px),var(--surface); }
+  .tour-title { font-family:var(--display); font-weight:700; font-size:24px; letter-spacing:-.02em; margin:6px 0 6px; }
+  .tour-sub { color:var(--muted); font-size:14px; margin:0; max-width:48ch; }
+  .tour-list { padding:6px 26px; }
+  .tour-row { display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .tour-row:last-child { border-bottom:0; }
+  .tour-ico { width:38px; height:38px; border-radius:10px; background:var(--surface-2); border:1px solid var(--line); display:grid; place-items:center; font-size:18px; flex:none; }
+  .tour-row b { font-weight:700; font-size:15px; }
+  .tour-row p { margin:3px 0 0; color:var(--muted); font-size:13.5px; line-height:1.5; }
+  .tour-foot { display:flex; gap:14px; align-items:center; padding:18px 26px 24px; border-top:1px solid var(--line); flex-wrap:wrap; }
+  .help-btn { width:30px; height:30px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--muted); font-weight:700; cursor:pointer; font-size:15px; font-family:var(--display); }
+  .help-btn:hover { color:var(--ink); border-color:var(--line-2); }
   .panel { background:var(--surface); box-shadow:var(--shadow); }
   th { background:var(--surface-2); color:var(--faint); font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; font-weight:500; }
   tr:hover td { background:var(--surface-2); }
@@ -460,7 +476,8 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="advisor">🧭 Advisor</button>
   <button class="tabbtn" id="admin-tab" data-tab="admin" style="display:none">🛠 Admin</button>
   <a class="tablink" href="/compete">🥊 Competitive</a>
-  <span id="authbox" style="margin-left:auto;align-self:center"></span>
+  <button class="help-btn" id="help-tab" type="button" title="How it works" style="margin-left:auto;align-self:center">?</button>
+  <span id="authbox" style="align-self:center"></span>
 </div>
 
 <section class="tabpane active" id="tab-home">
@@ -604,6 +621,29 @@ export async function buildDashboard() {
 </div>
 
 <div id="toast"></div>
+
+<div id="tour-overlay" class="tour-overlay hidden" role="dialog" aria-modal="true" aria-label="How it works">
+  <div class="tour-card panel">
+    <div class="tour-head">
+      <p class="eyebrow">Welcome</p>
+      <h3 class="tour-title">How Plays Database works</h3>
+      <p class="tour-sub">Find and ship the next app worth building. Here is the quick tour of each tab.</p>
+    </div>
+    <div class="tour-list">
+      <div class="tour-row"><span class="tour-ico">🏠</span><div><b>Home</b><p>Your launchpad: the top available plays and what is rising fastest, ready to claim.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">🎯</span><div><b>Top Plays</b><p>Every consumer app on the charts, scored by a single Play score. Filter, claim one, open any app for the full breakdown.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">💡</span><div><b>Idea Radar</b><p>Fresh, buildable app concepts scouted nightly from X, LinkedIn, and Product Hunt.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">📈</span><div><b>Charts</b><p>Live App Store top fives by category and country, plus what is hot, moving, and new.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">🧭</span><div><b>Advisor</b><p>Enter your app's free and paid features and get an AI report comparing you to competitors, with feature gaps and pricing moves.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">📝</span><div><b>Submit a play</b><p>Pitch a play to the team. It posts straight to Slack the moment you send it.</p></div></div>
+      <div class="tour-row"><span class="tour-ico">⌨️</span><div><b>Search anything</b><p>Press the / key or Cmd K anywhere to fuzzy search every app or jump to any tab.</p></div></div>
+    </div>
+    <div class="tour-foot">
+      <button id="tour-close" type="button">Got it, let me in</button>
+      <span style="color:var(--muted);font-size:12.5px">Reopen any time from the ? in the tab bar.</span>
+    </div>
+  </div>
+</div>
 
 <div id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
   <div class="cmdk-box panel">
@@ -1142,6 +1182,13 @@ render();
 applyView();
 renderTopCharts();
 routeFromHash();
+// first-run tutorial
+function openTour(){ const m=$('#tour-overlay'); if(m) m.classList.remove('hidden'); }
+function closeTour(){ const m=$('#tour-overlay'); if(m) m.classList.add('hidden'); }
+if ($('#help-tab')) $('#help-tab').onclick = openTour;
+if ($('#tour-close')) $('#tour-close').onclick = closeTour;
+if ($('#tour-overlay')) $('#tour-overlay').addEventListener('click', e => { if (e.target.id === 'tour-overlay') closeTour(); });
+try { if (!localStorage.getItem('plays_tour_seen')) { openTour(); localStorage.setItem('plays_tour_seen','1'); } } catch(e) {}
 loadState().then(refreshAll);`;
 
   const html = pageShell({ title: 'Plays Database', active: 'apps', app: 'apps', body, script });
