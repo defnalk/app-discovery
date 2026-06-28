@@ -2,8 +2,8 @@
  * Persistence for competitive analyses so a manager's past runs stay available
  * as a browsable list. Supabase-backed in production (table `compete_analyses`,
  * migration 0004) via the store's raw client; falls back to data/compete-analyses.json
- * for local dev. Tolerates a missing table — persistence no-ops with a warning
- * rather than failing the run — so the feature still works before the migration
+ * for local dev. Tolerates a missing table, persistence no-ops with a warning
+ * rather than failing the run, so the feature still works before the migration
  * is applied (the current result just won't survive a reload until then).
  */
 import { randomUUID } from 'node:crypto';
@@ -53,7 +53,7 @@ export async function saveAnalysis(a: CompetitiveAnalysis): Promise<string> {
       });
       if (error) throw new Error(error.message);
     } catch (err) {
-      if (missingTable(err)) { log.warn('compete: compete_analyses table missing — not persisted (apply migration 0004)'); return id; }
+      if (missingTable(err)) { log.warn('compete: compete_analyses table missing, not persisted (apply migration 0004)'); return id; }
       throw err;
     }
     return id;

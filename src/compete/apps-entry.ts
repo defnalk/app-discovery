@@ -26,7 +26,7 @@ export default async function handler(req: IncomingMessage & { method?: string }
   }
 
   // Open (no login). Best-effort per-IP throttle so the paid Claude call can't
-  // be hammered. In-memory, so it resets per warm instance — a soft guard, not
+  // be hammered. In-memory, so it resets per warm instance, a soft guard, not
   // a hard quota.
   const ip = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || 'anon';
   if (!checkRateLimit('compete:' + ip, RUNS_PER_HOUR)) {
@@ -34,7 +34,7 @@ export default async function handler(req: IncomingMessage & { method?: string }
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
     });
-    res.write(`event: error\ndata: ${JSON.stringify({ message: 'Too many analyses from your network in the last hour — give it a few minutes.' })}\n\n`);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: 'Too many analyses from your network in the last hour, give it a few minutes.' })}\n\n`);
     res.write('event: done\ndata: {}\n\n');
     res.end();
     return;

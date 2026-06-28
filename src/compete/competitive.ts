@@ -2,11 +2,11 @@
  * Product-side competitive analysis: the product equivalent of the campaign
  * social-listening tool. A Play manager gives an app + category; the workflow
  *   1. discovers the competitor set (Apify Google Play search + the local app
- *      store DB — the same fetching layer the nightly ingest uses), then
+ *      store DB, the same fetching layer the nightly ingest uses), then
  *   2. hands the seed app + candidates to Claude, which curates the set and
  *      returns a structured breakdown (pricing, markets, features, feature→ICP).
  *
- * Store metadata never covers pricing tiers or ICP mapping — Claude enriches
+ * Store metadata never covers pricing tiers or ICP mapping, Claude enriches
  * those from its own knowledge, and from live web context when ANTHROPIC_WEB_SEARCH
  * is enabled (the Anthropic web_search server tool). The model is the high-value,
  * interactive opus-tier (override with COMPETE_MODEL); like the nightly analyzer
@@ -261,13 +261,13 @@ export function competitivePrompt(app: string, category: string, candidates: Com
 TARGET APP: ${app}
 CATEGORY / POSITIONING: ${category}
 
-The product manager needs to understand who they are really competing with and how those competitors are positioned — not a generic market overview.
+The product manager needs to understand who they are really competing with and how those competitors are positioned, not a generic market overview.
 
 Below are candidate apps discovered from the Google Play store and our internal app database. Store metadata is incomplete (it does NOT include pricing tiers, the markets a company actually operates in, or which features map to which ideal-customer-profile). Treat these as SEEDS:
 - Keep the candidates that are genuine competitors of ${app} in the "${category}" space.
 - Drop candidates that are off-target (wrong category, a tool/SDK, an obvious mismatch).
-- ADD the well-known direct competitors you know of that are missing from the list — do not limit yourself to the candidates.
-- Aim for the 5–8 most relevant competitors.
+- ADD the well-known direct competitors you know of that are missing from the list, do not limit yourself to the candidates.
+- Aim for the 5-8 most relevant competitors.
 
 For EACH competitor return:
 - name, store_id (use the candidate's store_id if known, else ""), developer (else "")
@@ -275,7 +275,7 @@ For EACH competitor return:
 - pricing: { model (e.g. "freemium + subscription", "one-time", "usage-based"), tiers: [{ name, price (e.g. "$12.99/mo" or "Free"), billing (e.g. "monthly", "annual", "one-time", "free"), highlights: [short strings of what the tier unlocks] }] }
 - markets: the countries/regions they actually operate in or target
 - features: the notable product features / capabilities
-- feature_icp_map: for the features that matter most, map each to the ideal customer profile it serves — [{ feature, icp (the specific user segment, e.g. "anxiety sufferers seeking 3am support", not "everyone"), rationale (one line: why that feature wins that ICP) }]
+- feature_icp_map: for the features that matter most, map each to the ideal customer profile it serves, [{ feature, icp (the specific user segment, e.g. "anxiety sufferers seeking 3am support", not "everyone"), rationale (one line: why that feature wins that ICP) }]
 - notes: anything else a PM should know (recent moves, weaknesses, moats)
 
 Also return:
@@ -284,7 +284,7 @@ Also return:
 
 Enrich pricing tiers, markets, and ICP mapping from your own knowledge${
     process.env.ANTHROPIC_WEB_SEARCH ? ' and from current web search (verify pricing and markets against live sources where you can)' : ''
-  } — the store metadata will not contain them.
+  }, the store metadata will not contain them.
 
 CANDIDATES (JSON):
 ${JSON.stringify(candidates, null, 1)}
@@ -346,7 +346,7 @@ export async function analyzeCompetitors(
   candidates: CompetitorCandidate[],
 ): Promise<{ summary: string; icps: string[]; competitors: Competitor[]; model: string; webSearch: boolean }> {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is not set — set it to run the competitive analysis.');
+    throw new Error('ANTHROPIC_API_KEY is not set, set it to run the competitive analysis.');
   }
   const model = process.env.COMPETE_MODEL ?? 'claude-opus-4-8';
   const webSearch = ['1', 'true', 'yes'].includes((process.env.ANTHROPIC_WEB_SEARCH ?? '').toLowerCase());
@@ -357,7 +357,7 @@ export async function analyzeCompetitors(
   // Base request. With web_search we run the server-tool loop and ask for JSON in
   // the prompt (forced json_schema output is reserved for the no-tool path, where
   // there is no tool loop to interleave with). Without it we pin output_config so
-  // the structure is guaranteed every run — the convention from jobs/analyze.ts.
+  // the structure is guaranteed every run, the convention from jobs/analyze.ts.
   const base: Record<string, unknown> = { model, max_tokens: 12_000 };
   if (webSearch) {
     base.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
