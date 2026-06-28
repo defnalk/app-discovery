@@ -320,6 +320,20 @@ export async function buildDashboard() {
   .hero-cta { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
   @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .tabpane.active { animation:paneIn .18s var(--ease); }
+  /* command palette */
+  #cmdk { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:80; align-items:flex-start; justify-content:center; padding-top:12vh; }
+  #cmdk.show { display:flex; animation:paneIn .12s var(--ease); }
+  .cmdk-box { width:92%; max-width:560px; padding:0; margin:0; overflow:hidden; box-shadow:0 24px 64px -22px rgba(0,0,0,.75); }
+  #cmdk-input { width:100%; border:0; border-bottom:1px solid var(--line); background:transparent; border-radius:0; padding:15px 18px; font-size:15px; }
+  #cmdk-input:focus { box-shadow:none; }
+  #cmdk-list { max-height:52vh; overflow-y:auto; padding:6px; }
+  .cmdk-item { display:flex; gap:10px; align-items:center; padding:9px 12px; border-radius:8px; cursor:pointer; }
+  .cmdk-item.sel, .cmdk-item:hover { background:var(--line); }
+  .cmdk-item .ci-kind { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); border:1px solid var(--line-2); border-radius:99px; padding:1px 7px; flex:none; }
+  .cmdk-item .ci-sub { color:var(--dim); font-size:12px; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
+  .cmdk-empty { padding:20px; color:var(--dim); text-align:center; font-size:13px; }
+  .cmdk-foot { border-top:1px solid var(--line); padding:8px 14px; color:var(--dim); font-size:11px; font-family:var(--mono); }
+  .kbd { font-family:var(--mono); font-size:11px; background:var(--line); border:1px solid var(--line-2); border-radius:5px; padding:1px 5px; color:var(--txt-2); }
   .tabs { display:flex; gap:4px; margin:16px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .tabbtn { background:none; color:var(--dim); border:0; border-bottom:2px solid transparent; border-radius:0; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; }
   .tabbtn:hover { color:var(--txt); }
@@ -390,6 +404,7 @@ export async function buildDashboard() {
   <div class="hero-cta">
     <button id="cta-plays" type="button">🎯 Browse top plays</button>
     <button class="ghost" id="cta-submit" type="button">📝 Submit a play</button>
+    <span class="dim" style="align-self:center;font-size:12px">or press <span class="kbd">⌘K</span> to search anything</span>
   </div>
 </div>
 <div class="tabs">
@@ -545,6 +560,14 @@ export async function buildDashboard() {
 </div>
 
 <div id="toast"></div>
+
+<div id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk-box panel">
+    <input id="cmdk-input" type="text" placeholder="Search apps or jump to a tab…" autocomplete="off" spellcheck="false" aria-label="Search">
+    <div id="cmdk-list"></div>
+    <div class="cmdk-foot"><span class="kbd">↑</span> <span class="kbd">↓</span> navigate · <span class="kbd">↵</span> open · <span class="kbd">esc</span> close</div>
+  </div>
+</div>
 
 <details class="panel" style="padding:10px 14px;margin-top:18px">
   <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
@@ -914,6 +937,30 @@ function renderTopCharts() {
   document.querySelectorAll('.tc-app').forEach(li => li.onclick = () => openApp(+li.dataset.i));
 }
 function openApp(i) { location.hash = '#/app/' + encodeURIComponent(ROWS[i].id); }
+// --- Command palette (⌘/Ctrl+K) ---
+const CMDK_TABS = [
+  { label:'Home', act:()=>showTab('home') }, { label:'Top Plays', act:()=>showTab('plays') },
+  { label:'Idea Radar', act:()=>showTab('ideas') }, { label:'Charts', act:()=>showTab('charts') },
+  { label:'Submit a play', act:()=>showTab('submit') }, { label:'Advisor', act:()=>showTab('advisor') },
+  { label:'Competitive', act:()=>{ location.href='/compete'; } },
+];
+let cmdkItems = [], cmdkSel = 0;
+function openCmdk(){ const m=$('#cmdk'); if(!m) return; m.classList.add('show'); const i=$('#cmdk-input'); i.value=''; renderCmdk(''); setTimeout(()=>i.focus(),0); }
+function closeCmdk(){ const m=$('#cmdk'); if(m) m.classList.remove('show'); }
+function renderCmdk(q){
+  q=(q||'').trim().toLowerCase();
+  const tabs = CMDK_TABS.filter(t=>!q||t.label.toLowerCase().includes(q)).map(t=>({label:t.label, sub:'', kind:'Tab', act:t.act}));
+  let apps=[];
+  if(q) apps = ROWS.filter(r=>r.name.toLowerCase().includes(q)||(r.developer||'').toLowerCase().includes(q)).slice(0,8)
+    .map(r=>({label:r.name, sub:(r.developer||'')+' · play '+(r.play!=null?r.play.toFixed(0):'–'), kind:'App', act:()=>{ const i=ROWS.indexOf(r); if(i>=0) openApp(i); }}));
+  cmdkItems = tabs.concat(apps); cmdkSel = 0;
+  const list=$('#cmdk-list'); if(!list) return;
+  if(!cmdkItems.length){ list.innerHTML='<div class="cmdk-empty">No matches</div>'; return; }
+  list.innerHTML = cmdkItems.map((it,n)=>'<div class="cmdk-item'+(n===0?' sel':'')+'" data-n="'+n+'"><span class="ci-kind">'+it.kind+'</span><span>'+escq(it.label)+'</span>'+(it.sub?'<span class="ci-sub">'+escq(it.sub)+'</span>':'')+'</div>').join('');
+  list.querySelectorAll('.cmdk-item').forEach(el=>{ el.onclick=()=>activateCmdk(+el.dataset.n); el.onmousemove=()=>setCmdkSel(+el.dataset.n); });
+}
+function setCmdkSel(n){ if(!cmdkItems.length) return; cmdkSel=Math.max(0,Math.min(cmdkItems.length-1,n)); document.querySelectorAll('.cmdk-item').forEach((el,i)=>el.classList.toggle('sel', i===cmdkSel)); const s=document.querySelector('.cmdk-item.sel'); if(s) s.scrollIntoView({block:'nearest'}); }
+function activateCmdk(n){ const it=cmdkItems[n]; if(!it) return; closeCmdk(); it.act(); }
 function openAppById(id){
   const i = ROWS.findIndex(r => r.id === id); if (i < 0) return;
   ['geo','cat','seen','mom'].forEach(x => $('#' + x).value = ''); $('#gap').checked = false;
@@ -1028,6 +1075,20 @@ function routeFromHash(){
   if (document.getElementById('tab-'+t)) showTab(t);
 }
 window.addEventListener('hashchange', routeFromHash);
+// command palette shortcuts
+document.addEventListener('keydown', e => {
+  const open = $('#cmdk') && $('#cmdk').classList.contains('show');
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); open ? closeCmdk() : openCmdk(); return; }
+  const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
+  if (!open && e.key === '/' && !inField) { e.preventDefault(); openCmdk(); return; }
+  if (!open) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeCmdk(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); setCmdkSel(cmdkSel + 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); setCmdkSel(cmdkSel - 1); }
+  else if (e.key === 'Enter') { e.preventDefault(); activateCmdk(cmdkSel); }
+});
+if ($('#cmdk-input')) $('#cmdk-input').addEventListener('input', e => renderCmdk(e.target.value));
+if ($('#cmdk')) $('#cmdk').addEventListener('click', e => { if (e.target.id === 'cmdk') closeCmdk(); });
 
 ME = meHint();
 loadFilters();
