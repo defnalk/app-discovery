@@ -108,6 +108,6 @@ export function sparkline(ranks: (number | null)[], maxRank = 100): string {
   const pts = ranks
     .map((r, i) => (r == null ? null : `${(i / Math.max(ranks.length - 1, 1)) * w},${(Math.min(r, maxRank) / maxRank) * (h - 4) + 2}`))
     .filter(Boolean);
-  if (pts.length < 2) return `<span class="dim">–</span>`;
+  if (pts.length < 2) return `<span class="dim">-</span>`;
   return `<svg class="spark" width="${w}" height="${h}"><polyline points="${pts.join(' ')}" fill="none" stroke="#4da3ff" stroke-width="1.5"/></svg>`;
 }

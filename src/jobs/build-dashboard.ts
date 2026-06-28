@@ -25,7 +25,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
   try {
     const seed = JSON.parse(readFileSync(path.join(process.cwd(), 'seed', 'idea-radar.json'), 'utf8')) as IdeaRow[];
     for (const s of seed) byKey.set(s.dedup_key, s);
-  } catch { /* no seed file — fine */ }
+  } catch { /* no seed file, fine */ }
   for (const d of dbIdeas) if (d.status === 'scored') byKey.set(d.dedup_key, d);
   return [...byKey.values()]
     .filter((i) => i.app_name && i.buildability !== 'too_complex' && i.buildability !== 'months')
@@ -45,7 +45,7 @@ async function bundleFunctions() {
     bundle: true, platform: 'node', format: 'esm', target: 'node20',
     outExtension: { '.js': '.mjs' }, logLevel: 'error',
   });
-  // Competitive Analysis tool — separate entry under src/compete. Only bundle when
+  // Competitive Analysis tool, separate entry under src/compete. Only bundle when
   // the source is present (it may be uncommitted WIP); a missing entry must NOT
   // fail the whole dashboard build.
   const competeEntry = path.join(process.cwd(), 'src', 'compete', 'apps-entry.ts');
@@ -67,14 +67,14 @@ function assertNoSecretLeak() {
     .map((k) => process.env[k]).filter((v): v is string => !!v && v.length > 12);
   for (const f of files) {
     const txt = readFileSync(f, 'utf8');
-    for (const s of secrets) if (txt.includes(s)) throw new Error(`SECURITY: a secret value leaked into ${path.basename(f)} — build aborted`);
+    for (const s of secrets) if (txt.includes(s)) throw new Error(`SECURITY: a secret value leaked into ${path.basename(f)}, build aborted`);
   }
 }
 
 // --- Clothing / fashion brand filter -------------------------------------
 // The plays dashboard ranks consumer APPS worth (re)building. Single-brand
 // fashion/apparel retailers (Zara, H&M, UNIQLO, Myntra…) ship store apps that
-// chart under "Shopping" but are NOT build targets — you can't rebuild a clothing
+// chart under "Shopping" but are NOT build targets, you can't rebuild a clothing
 // label. Drop them here. Resale/marketplace apps (Vinted, Vestiaire, Back Market)
 // are platform plays, so they are deliberately KEPT.
 //
@@ -176,14 +176,14 @@ export async function buildDashboard() {
     })
     .filter((r) => r != null);
 
-  // Drop single-brand clothing/fashion retailers — not buildable plays. See
+  // Drop single-brand clothing/fashion retailers, not buildable plays. See
   // isClothingBrand above. Resale/marketplace apps are kept on purpose.
   const beforeClothing = rows.length;
   rows = rows.filter((r) => !isClothingBrand(r!.name, r!.developer, r!.category));
   log.info(`dashboard: dropped ${beforeClothing - rows.length} clothing/fashion brand apps (not build targets)`);
 
-  // Composite "play score" (0–100): how attractive each app is to build a play
-  // of right now, combining every score we have — idea quality, momentum, an open
+  // Composite "play score" (0-100): how attractive each app is to build a play
+  // of right now, combining every score we have, idea quality, momentum, an open
   // market (low saturation), build speed, and proven traction. Fact-check-suspect
   // apps are discounted. The top 100 by this score are the headline "plays".
   const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -199,7 +199,7 @@ export async function buildDashboard() {
     const tractionN = clamp01(Math.log10(1 + (r!.rating_count ?? 0)) / ratingMax);
     let s = 0.30 * ideaN + 0.24 * momN + 0.16 * openN + 0.12 * buildN + 0.18 * tractionN;
     if (r!.flag) s *= 0.6; // unverified / suspect traction → discount
-    if (r!.incumbent) s *= 0.5; // not a build target — keep visible but sink it below real plays
+    if (r!.incumbent) s *= 0.5; // not a build target, keep visible but sink it below real plays
     r!.play = Math.round(clamp01(s) * 1000) / 10;
   }
   rows.sort((a, b) => b!.play - a!.play);
@@ -227,7 +227,7 @@ export async function buildDashboard() {
   for (const s of snaps) {
     if (s.snapshot_date !== latestDay || s.chart_rank == null) continue;
     const idx = rowIndexByApp.get(s.app_id);
-    if (idx == null) continue; // not in the table (too complex / no rollup) — keep charts consistent with it
+    if (idx == null) continue; // not in the table (too complex / no rollup), keep charts consistent with it
     const cat = appById.get(s.app_id)?.category || 'Other';
     const key = `${s.geo}|${s.chart_type}|${cat}`;
     const m = chartAcc.get(key) ?? chartAcc.set(key, new Map()).get(key)!;
@@ -277,7 +277,7 @@ export async function buildDashboard() {
     return `<div class="idea${top ? ' idea-top' : ''}${n >= 12 ? ' idea-more' : ''}">
       <div class="idea-head"><span class="idea-play${top ? ' play-hi' : ''}">${i.play.toFixed(0)}</span>
         <b>${esc(i.app_name)}</b><span class="idea-src">${esc(i.source)}</span></div>
-      <div class="dim" style="margin:3px 0 6px;font-size:12px">${esc(i.category ?? '–')} · ${buildPill(i.buildability)} · novelty ${i.novelty ?? '–'}/10 · demand ${i.demand ?? '–'}/10</div>
+      <div class="dim" style="margin:3px 0 6px;font-size:12px">${esc(i.category ?? '-')} · ${buildPill(i.buildability)} · novelty ${i.novelty ?? '-'}/10 · demand ${i.demand ?? '-'}/10</div>
       <div>${esc(i.concept ?? '')}</div>
       <div class="idea-why">▸ ${esc(i.why ?? '')}</div>
       ${i.source_url ? `<a href="${esc(i.source_url)}" target="_blank" class="idea-link">source ↗</a>` : ''}
@@ -295,14 +295,56 @@ export async function buildDashboard() {
   // (unclaimed) plays once the live claim state loads.
   const body = `
 <style>
-  tr.approw.play-top td { background: rgba(63,207,142,0.09); }
-  tr.approw.play-top:hover td { background: rgba(63,207,142,0.16); }
+  /* ═══ Light / editorial theme, scoped to the Plays dashboard. The leads app never
+        loads this <style>, so the reskin can't leak. Redefining the shared tokens here
+        (this block cascades after pageShell's head styles) flips every token-based
+        component to the paper aesthetic at once. ═══ */
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+  :root {
+    --paper:#EFEEE9; --surface:#FCFBF8; --surface-2:#F6F4EE; --ink:#1B1B1A; --muted:#6E6E66; --faint:#9A9A90;
+    --go:#0E7C66; --go-dark:#0A5F4E; --go-tint:#E4EFEA; --amber:#B97514; --amber-tint:#F4E9D6; --rust:#B2462E;
+    --display:"Bricolage Grotesque",Georgia,serif; --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --bg:#EFEEE9; --bg-elev:#FCFBF8; --panel:#FCFBF8; --panel-2:#F6F4EE; --line:#DDDCD3; --line-2:#CDCBC0;
+    --txt:#1B1B1A; --txt-2:#6E6E66; --dim:#6E6E66; --acc:#0E7C66; --acc-2:#0A5F4E; --acc-ink:#FFFFFF;
+    --good:#0E7C66; --good-bg:#E4EFEA; --warn:#B97514; --warn-bg:#F4E9D6; --bad:#B2462E; --bad-bg:#F4DDD5;
+    --shadow:0 1px 0 rgba(0,0,0,.03), 0 10px 30px -18px rgba(0,0,0,.28); --ring:0 0 0 3px rgba(14,124,102,.25);
+  }
+  body { background:var(--paper); color:var(--ink); font-family:var(--sans); }
+  h1,h2,h3,h4 { font-family:var(--display); letter-spacing:-.02em; }
+  header { background:linear-gradient(180deg,var(--surface),var(--paper)); }
+  header h1 { font-family:var(--display); font-weight:800; }
+  .panel { background:var(--surface); box-shadow:var(--shadow); }
+  th { background:var(--surface-2); color:var(--faint); font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; font-weight:500; }
+  tr:hover td { background:var(--surface-2); }
+  input, select, textarea { background:var(--surface); }
+  button { color:#fff; } button.ghost { background:var(--surface); color:var(--ink); border:1px solid var(--line); }
+  .pill { background:var(--surface-2); border:1px solid var(--line); color:var(--muted); font-family:var(--mono); }
+  .pill.new { background:var(--go-tint); color:var(--go-dark); border-color:transparent; }
+  .pill.gap { background:var(--amber-tint); color:var(--amber); border-color:transparent; }
+  .stat-chip { background:var(--surface); box-shadow:var(--shadow); }
+  .stat-chip[data-go]:hover { border-color:var(--go); }
+  .tabbtn { color:var(--muted); } .tabbtn.active { color:var(--ink); border-bottom-color:var(--go); }
+  .chip { background:var(--surface); color:var(--muted); } .chip.active { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .play-hi, .playbadge { color:var(--go-dark)!important; } .playbadge { background:var(--go-tint); }
+  .results-badge { background:var(--amber); color:#fff; }
+  /* expanded detail panel + claim widget: were hardcoded dark, retint to paper */
+  tr.detail > td { background:var(--surface-2)!important; }
+  .cw { background:var(--surface); border-color:var(--line); }
+  /* command palette + login modal on light */
+  .cmdk-box, .login-card { background:var(--surface); }
+  #cmdk-input { color:var(--ink); }
+  tr.approw.play-top td { background: var(--go-tint); }
+  tr.approw.play-top:hover td { background: #D9EBE2; }
+  .hero .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--go); margin:0 0 6px; }
+  .hero-h { font-family:var(--display); font-weight:700; font-size:38px; line-height:1.06; letter-spacing:-.03em; margin:0 0 8px; max-width:18ch; color:var(--ink); }
+  .hero-h em { font-style:italic; color:var(--go); }
+  .hero .sub { color:var(--muted); font-size:15px; max-width:62ch; margin:0; }
   tr.approw.play-top td:first-child { box-shadow: inset 3px 0 0 0 var(--good); }
   .playbadge { display:inline-block; min-width:34px; text-align:center; padding:1px 6px; border-radius:99px; font-size:11px; font-weight:700; background:#10301f; color:var(--good); margin-left:6px; }
   .play-hi { color: var(--good); font-weight:700; }
   .idea-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:10px; }
   .idea { border:1px solid var(--line); border-radius:10px; padding:11px 13px; background:var(--bg); font-size:13px; }
-  .idea-top { border-color:rgba(63,207,142,0.45); background:rgba(63,207,142,0.06); }
+  .idea-top { border-color:var(--go); background:var(--go-tint); }
   .idea-head { display:flex; align-items:center; gap:8px; }
   .idea-head b { font-size:14px; }
   .idea-play { display:inline-flex; align-items:center; justify-content:center; min-width:30px; height:24px; padding:0 6px; border-radius:6px; background:var(--line); font-weight:700; font-variant-numeric:tabular-nums; }
@@ -348,7 +390,7 @@ export async function buildDashboard() {
   .cat-chips { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 12px; }
   .chip { background:var(--panel); color:var(--dim); border:1px solid var(--line); border-radius:99px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer; }
   .chip:hover { color:var(--txt); }
-  .chip.active { background:var(--acc); color:#06121f; border-color:var(--acc); }
+  .chip.active { background:var(--ink); color:var(--paper); border-color:var(--ink); }
   .hl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:10px; }
   .hl-card { display:flex; align-items:center; gap:10px; text-align:left; width:100%; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; cursor:pointer; color:var(--txt); font:inherit; }
   .hl-card:hover { border-color:var(--acc); }
@@ -359,7 +401,7 @@ export async function buildDashboard() {
   #login-modal.show { display:flex; }
   .login-card { max-width:340px; width:90%; }
   #authbox button { font-size:13px; padding:6px 12px; }
-  .cw { margin-top:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#11161f; }
+  .cw { margin-top:12px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); }
   .cw button { font-size:13px; }
   .claimed-pill { display:inline-block; padding:1px 7px; border-radius:99px; font-size:11px; background:#3b2a14; color:var(--warn); margin-left:4px; }
   tr.approw.claimed td { opacity:.6; }
@@ -373,10 +415,10 @@ export async function buildDashboard() {
   .toast.err { border-color:var(--bad); color:var(--bad); }
   .toast.ok { border-color:var(--good); color:var(--good); }
   .cw-timer.cw-urgent { color:var(--bad); font-weight:700; }
-  .results-badge { background:var(--warn); color:#06121f; padding:3px 8px; border-radius:6px; font-weight:600; font-size:11px; }
+  .results-badge { background:var(--warn); color:#fff; padding:3px 8px; border-radius:6px; font-weight:600; font-size:11px; }
   .hl-claimed { margin-left:auto; font-size:10px; color:var(--warn); flex:none; white-space:nowrap; }
   #view-toggle { margin-left:auto; }
-  /* Compact view: hide detail/verification cols (Geos 5, Rank14d 6, Satur 10, Ratings 11, Fact 12, First 13) — keep Play/App/Claim/Category/Momentum/Idea/Build, plus the row-tap detail. */
+  /* Compact view: hide detail/verification cols (Geos 5, Rank14d 6, Satur 10, Ratings 11, Fact 12, First 13), keep Play/App/Claim/Category/Momentum/Idea/Build, plus the row-tap detail. */
   #t.compact th:nth-child(5),#t.compact td:nth-child(5),#t.compact th:nth-child(6),#t.compact td:nth-child(6),#t.compact th:nth-child(10),#t.compact td:nth-child(10),#t.compact th:nth-child(11),#t.compact td:nth-child(11),#t.compact th:nth-child(12),#t.compact td:nth-child(12),#t.compact th:nth-child(13),#t.compact td:nth-child(13){ display:none; }
   @media (max-width:1024px){ .idea-grid,.hl-grid,#tc-grid{ grid-template-columns:repeat(2,1fr)!important; } }
   @media (max-width:640px){
@@ -394,7 +436,9 @@ export async function buildDashboard() {
   }
 </style>
 <div class="hero">
-  <p>Consumer apps worth building — every app ranked nightly by a single <b>Play score</b>, plus fresh app ideas scouted from social. Click any app for the full breakdown.</p>
+  <p class="eyebrow">Nightly app-traction engine</p>
+  <h2 class="hero-h">Find the next app <em>worth building</em>.</h2>
+  <p class="sub">Every consumer app on the charts, scored on idea quality, momentum, open market, build speed, and proven traction. One number, the <b>Play score</b>. Plus fresh ideas scouted from social.</p>
   <div class="stats">
     <div class="stat-chip" data-go="plays" role="button" tabindex="0" title="Browse all tracked apps"><b>${totalTracked.toLocaleString()}</b><span>apps tracked · ${geos.length} geos</span></div>
     <div class="stat-chip" data-go="plays" role="button" tabindex="0" title="See the top plays"><b>${Math.min(100, rows.length)}</b><span>top plays · green</span></div>
@@ -424,7 +468,7 @@ export async function buildDashboard() {
 </section>
 
 <section class="tabpane" id="tab-plays">
-  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0–100) — idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Pick a category to narrow, then filter by market. Click a row for per-geo trends &amp; the AI analysis.${totalTracked > EMBED_CAP ? ` Top ${EMBED_CAP.toLocaleString()} of ${totalTracked.toLocaleString()} apps loaded for fast browsing.` : ''}</p>
+  <p class="muted-note" style="margin:0 0 10px">Every tracked app, ranked by <b>Play score</b> (0-100), idea quality + momentum + open market + build speed + proven traction. The <b class="play-hi">top 100</b> are pinned on top in green. Pick a category to narrow, then filter by market. Click a row for per-geo trends &amp; the AI analysis.${totalTracked > EMBED_CAP ? ` Top ${EMBED_CAP.toLocaleString()} of ${totalTracked.toLocaleString()} apps loaded for fast browsing.` : ''}</p>
   <div class="cat-chips" id="cat-chips">
     <button class="chip active" data-cat="">All categories</button>
     ${categories.map((c) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
@@ -443,22 +487,22 @@ export async function buildDashboard() {
   </div>
   <div class="panel" style="overflow-x:auto">
   <table id="t"><thead><tr>
-    <th data-k="play" class="num" title="Build-worthiness 0–100: idea + momentum + open market + build speed + traction">Play ▾</th>
-    <th data-k="name">App</th><th title="Who has reserved or started this play — pick from the dropdown to claim it">Claim</th><th data-k="category">Category</th><th>Geos live</th>
+    <th data-k="play" class="num" title="Build-worthiness 0-100: idea + momentum + open market + build speed + traction">Play ▾</th>
+    <th data-k="name">App</th><th title="Who has reserved or started this play, pick from the dropdown to claim it">Claim</th><th data-k="category">Category</th><th>Geos live</th>
     <th title="Best chart rank per day, last 14 days">Rank 14d</th><th data-k="momentum" class="num" title="Rank velocity + rating growth + new-geo expansion">Momentum</th>
-    <th data-k="idea" class="num" title="Concept quality 0–10 — proven demand, simple loop, monetizable">Idea</th><th data-k="build" title="How fast a small team could rebuild the core with AI">Build</th><th data-k="sat" class="num" title="Market saturation — lower = more room to win">Satur.</th>
+    <th data-k="idea" class="num" title="Concept quality 0-10, proven demand, simple loop, monetizable">Idea</th><th data-k="build" title="How fast a small team could rebuild the core with AI">Build</th><th data-k="sat" class="num" title="Market saturation, lower = more room to win">Satur.</th>
     <th data-k="rating_count" class="num" title="Fact-checked rating count (real traction)">Verified ratings</th><th title="Claimed vs verified traction check">Fact check</th><th data-k="first_seen" title="When we first caught this app">First caught</th>
   </tr></thead><tbody></tbody></table>
   </div>
 </section>
 
 <section class="tabpane" id="tab-ideas">
-  <p class="muted-note" style="margin:0 0 10px">Groundbreaking-but-simple app concepts scouted from <b>X · LinkedIn · Product Hunt</b>, scored the same way — <b class="play-hi">green</b> = top 12 plays. Showing 12; expand for the full list.</p>
+  <p class="muted-note" style="margin:0 0 10px">Groundbreaking-but-simple app concepts scouted from <b>X · LinkedIn · Product Hunt</b>, scored the same way, <b class="play-hi">green</b> = top 12 plays. Showing 12; expand for the full list.</p>
   ${ideasPanel}
 </section>
 
 <section class="tabpane" id="tab-charts">
-  <p class="muted-note" style="margin:0 0 10px">Live App Store top-5s per category, plus what's hot, moving and new right now — switch geo and chart type.</p>
+  <p class="muted-note" style="margin:0 0 10px">Live App Store top-5s per category, plus what's hot, moving and new right now, switch geo and chart type.</p>
   <div class="panel">
     <div class="filters" style="margin-bottom:10px">
       <label>Geo <select id="tc-geo"></select></label>
@@ -509,7 +553,7 @@ export async function buildDashboard() {
         </div>
         <div style="padding:0 26px">
           <div class="field"><label>Play name <span class="req">required</span></label><input id="sf-name" type="text" placeholder="Working name for the product" maxlength="200" required></div>
-          <div class="field"><label>One-line pitch <span class="req">required</span></label><p class="hint">If you only get one sentence — what is this play?</p><input id="sf-pitch" type="text" placeholder="A ___ that helps ___ do ___" maxlength="400"></div>
+          <div class="field"><label>One-line pitch <span class="req">required</span></label><p class="hint">If you only get one sentence, what is this play?</p><input id="sf-pitch" type="text" placeholder="A ___ that helps ___ do ___" maxlength="400"></div>
           <div class="field"><label>Why build this?</label><p class="hint">The proof: demand signal, gap, momentum.</p><textarea id="sf-why" maxlength="3000"></textarea></div>
           <div class="row">
             <div class="field"><label>Category</label><input id="sf-cat" type="text" list="cat-list" placeholder="e.g. Health &amp; Fitness" maxlength="100"></div>
@@ -524,7 +568,7 @@ export async function buildDashboard() {
 </section>
 
 <section class="tabpane" id="tab-advisor">
-  <p class="muted-note" style="margin:0 0 10px">Enter your app's current features and Claude compares them against competitors — surfacing feature gaps, differentiation angles, pricing/paywall moves, and quick wins. Grounded on the apps we track in your category.</p>
+  <p class="muted-note" style="margin:0 0 10px">Enter your app's current features and Claude compares them against competitors, surfacing feature gaps, differentiation angles, pricing/paywall moves, and quick wins. Grounded on the apps we track in your category.</p>
   <div class="panel" style="max-width:720px">
     <div id="advisor-gate" class="dim">Please <a href="#" id="advisor-signin" style="color:var(--acc)">sign in</a> to run the advisor.</div>
     <form id="advisor-form" style="display:none">
@@ -533,10 +577,10 @@ export async function buildDashboard() {
           <label style="flex:1;min-width:200px">Your app name<br><input id="adv-name" type="text" style="width:100%" maxlength="200" required></label>
           <label style="flex:1;min-width:160px">Category<br><input id="adv-cat" type="text" list="cat-list" style="width:100%" maxlength="100" placeholder="e.g. Shopping, Health &amp; Fitness"></label>
         </div>
-        <label>Main / free features<br><textarea id="adv-free" rows="4" style="width:100%" maxlength="4000" placeholder="One per line — what the app does today, and what's free"></textarea></label>
-        <label>Paid / premium features<br><textarea id="adv-paid" rows="4" style="width:100%" maxlength="4000" placeholder="One per line — what's behind the paywall / subscription"></textarea></label>
+        <label>Main / free features<br><textarea id="adv-free" rows="4" style="width:100%" maxlength="4000" placeholder="One per line, what the app does today, and what's free"></textarea></label>
+        <label>Paid / premium features<br><textarea id="adv-paid" rows="4" style="width:100%" maxlength="4000" placeholder="One per line, what's behind the paywall / subscription"></textarea></label>
         <label>Competitors <span class="dim">(optional)</span><br><input id="adv-comp" type="text" style="width:100%" maxlength="600" placeholder="Comma-separated, e.g. Strava, Nike Run Club"></label>
-        <label>Notes for Claude <span class="dim">(optional)</span><br><textarea id="adv-notes" rows="2" style="width:100%" maxlength="1500" placeholder="Anything else — target market, current pricing, goals"></textarea></label>
+        <label>Notes for Claude <span class="dim">(optional)</span><br><textarea id="adv-notes" rows="2" style="width:100%" maxlength="1500" placeholder="Anything else, target market, current pricing, goals"></textarea></label>
         <div style="display:flex;gap:10px;align-items:center"><button type="submit" id="adv-go">Generate report</button><span id="adv-msg" class="dim"></span></div>
       </div>
     </form>
@@ -545,7 +589,7 @@ export async function buildDashboard() {
 </section>
 
 <section class="tabpane" id="tab-admin">
-  <p class="muted-note" style="margin:0 0 10px">Admin — every manager's claimed plays &amp; submitted ideas. Visible to Defne &amp; Hussain only.</p>
+  <p class="muted-note" style="margin:0 0 10px">Admin, every manager's claimed plays &amp; submitted ideas. Visible to Defne &amp; Hussain only.</p>
   <div id="admin-body" class="panel dim">Sign in as an admin to view.</div>
 </section>
 
@@ -570,9 +614,9 @@ export async function buildDashboard() {
 </div>
 
 <details class="panel" style="padding:10px 14px;margin-top:18px">
-  <summary style="cursor:pointer;color:var(--dim)">Data sources — what updates automatically tonight</summary>
+  <summary style="cursor:pointer;color:var(--dim)">Data sources, what updates automatically tonight</summary>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-top:10px">${sourcesHtml}</div>
-  <p class="muted-note">A source activates the moment its key is added as a GitHub secret — no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
+  <p class="muted-note">A source activates the moment its key is added as a GitHub secret, no code changes. Nothing auto-sends: Apollo leads and Instantly batches always pass the human approval gate.</p>
 </details>`;
 
   const script = `
@@ -584,7 +628,7 @@ const TC_CHARTS = ${embedJson(tcCharts)};
 const CHART_LABELS = { top_free: 'Top Free', top_grossing: 'Top Grossing', new_free: 'New Apps', ai_search: 'AI Search' };
 const $ = (s) => document.querySelector(s);
 let sortKey = 'play', sortDir = -1;
-const fmt = (n) => n == null ? '–' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
+const fmt = (n) => n == null ? '-' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
 const ALL_GEOS = ${embedJson([...COUNTRIES])};
 const NET_GEOS = ${embedJson(LARGE_MARKETS)};
 let CLAIMS = {};   // subject_id -> claim row (apps), from /api/plays-state
@@ -619,7 +663,7 @@ function render() {
   else rows.sort((a,b)=> ((a[sortKey]??-Infinity) - (b[sortKey]??-Infinity)) * sortDir);
   const CAP = 500;
   const shown = rows.slice(0, CAP);
-  $('#count').innerHTML = rows.length <= CAP ? (rows.length + ' shown') : '<span class="results-badge">top ' + CAP + ' of ' + rows.length + ' — narrow by category/search</span>';
+  $('#count').innerHTML = rows.length <= CAP ? (rows.length + ' shown') : '<span class="results-badge">top ' + CAP + ' of ' + rows.length + ', narrow by category/search</span>';
   saveFilters();
   if (!shown.length) {
     $('#t tbody').innerHTML = '<tr><td colspan="13"><div style="text-align:center;padding:46px 20px;color:var(--dim)">' +
@@ -630,18 +674,18 @@ function render() {
     return;
   }
   $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + (CLAIMS[r.id] ? ' claimed' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
-    '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
+    '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '-') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
       '<br><span class="dim">' + escq(r.developer||'') + ' · ' + r.store + '</span></td>' +
     '<td>' + rowClaimSelect(r) + '</td>' +
-    '<td>' + escq(r.category||'–') + '</td>' +
+    '<td>' + escq(r.category||'-') + '</td>' +
     '<td>' + r.geos.map(g => '<span class="pill' + (r.new_geos.includes(g) ? ' new' : '') + '">' + g + '</span>').join('') +
       (r.geo_gap.length ? '<br><span class="dim">gap:</span> ' + r.geo_gap.map(g => '<span class="pill gap">' + g + '</span>').join('') : '') + '</td>' +
     '<td>' + r.spark + '</td>' +
     '<td class="num"><b>' + r.momentum.toFixed(2) + '</b></td>' +
-    '<td class="num">' + (r.idea != null ? '<b>' + r.idea + '</b>' : '<span class="dim">–</span>') + '</td>' +
-    '<td>' + (r.build ? '<span class="pill' + (r.build === 'weekend' || r.build === 'few_days' ? ' new' : '') + '">' + escq(r.build) + '</span>' : '<span class="dim">–</span>') + '</td>' +
-    '<td class="num">' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '<span class="dim">–</span>') + '</td>' +
+    '<td class="num">' + (r.idea != null ? '<b>' + r.idea + '</b>' : '<span class="dim">-</span>') + '</td>' +
+    '<td>' + (r.build ? '<span class="pill' + (r.build === 'weekend' || r.build === 'few_days' ? ' new' : '') + '">' + escq(r.build) + '</span>' : '<span class="dim">-</span>') + '</td>' +
+    '<td class="num">' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '<span class="dim">-</span>') + '</td>' +
     '<td class="num">' + fmt(r.rating_count) + '</td>' +
     '<td>' + (r.flag ? '<span class="flag">⚠ suspect</span>' : '<span class="dim">ok</span>') + '</td>' +
     '<td>' + r.first_seen + '</td></tr>').join('');
@@ -666,19 +710,19 @@ function openDetailRow(tr) {
   const r = ROWS[+tr.dataset.i];
   const d = document.createElement('tr');
   d.className = 'detail';
-  d.innerHTML = '<td colspan="13" style="background:#11161f;padding:14px 18px">' + detailHtml(r) + '</td>';
+  d.innerHTML = '<td colspan="13" style="background:var(--surface-2);padding:14px 18px">' + detailHtml(r) + '</td>';
   tr.after(d);
   wireClaimButtons(d);
 }
 function detailHtml(r) {
   const deltaRows = (r.deltas||[]).map(d => '<tr><td><span class="pill">' + d.geo + '</span></td>' +
-    '<td class="num">' + (d.now ?? '–') + '</td>' +
+    '<td class="num">' + (d.now ?? '-') + '</td>' +
     '<td class="num">' + (d.prev ?? '<span class="dim">not charting</span>') + '</td>' +
     (d.prev == null
       ? '<td class="num"><span class="pill new">new entry</span></td>'
       : '<td class="num" style="color:' + ((d.vel||0) > 0 ? 'var(--good)' : (d.vel||0) < 0 ? 'var(--bad)' : 'var(--dim)') + '">' +
         ((d.vel||0) > 0 ? '▲ +' : (d.vel||0) < 0 ? '▼ ' : '') + (d.vel ?? 0) + '</td>') +
-    '<td class="num">' + (d.growth ? (d.growth * 100).toFixed(1) + '%' : '–') + '</td></tr>').join('');
+    '<td class="num">' + (d.growth ? (d.growth * 100).toFixed(1) + '%' : '-') + '</td></tr>').join('');
   const an = r.idea != null || r.build || r.sat != null;
   return claimWidget(r) +
     '<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:12px">' +
@@ -687,10 +731,10 @@ function detailHtml(r) {
       '<tbody>' + (deltaRows || '<tr><td colspan="5" class="dim">no per-geo scores yet</td></tr>') + '</tbody></table></div>' +
     '<div style="max-width:520px"><h4 style="margin:0 0 6px">Analysis</h4>' +
       (an ? (
-        '<p style="margin:4px 0"><b>Idea ' + (r.idea ?? '–') + '/10</b> — ' + escq(r.idea_note||'') + '</p>' +
-        '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'–') + '</b> — ' + escq(r.build_note||'') + '</p>' +
-        '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '–') + '</b> — ' + escq(r.sat_note||'') + '</p>'
-      ) : '<p class="dim">not analyzed yet — top-momentum apps are analyzed nightly</p>') +
+        '<p style="margin:4px 0"><b>Idea ' + (r.idea ?? '-') + '/10</b>, ' + escq(r.idea_note||'') + '</p>' +
+        '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'-') + '</b>, ' + escq(r.build_note||'') + '</p>' +
+        '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '-') + '</b>, ' + escq(r.sat_note||'') + '</p>'
+      ) : '<p class="dim">not analyzed yet, top-momentum apps are analyzed nightly</p>') +
       '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p></div>' +
     gapsHtml(r) + '</div>';
 }
@@ -734,7 +778,7 @@ function gapsHtml(r){
   const all = ALL_GEOS.filter(g => !live.has(g));
   const pills = (arr) => arr.length ? arr.map(g => '<span class="pill gap">'+g+'</span>').join(' ') : '<span class="dim">none</span>';
   return '<div style="max-width:420px"><h4 style="margin:0 0 6px">Geo gaps</h4>' +
-    '<p style="margin:4px 0"><span class="dim">Live in:</span> ' + (r.geos.length ? r.geos.map(g=>'<span class="pill">'+g+'</span>').join(' ') : '<span class="dim">—</span>') + '</p>' +
+    '<p style="margin:4px 0"><span class="dim">Live in:</span> ' + (r.geos.length ? r.geos.map(g=>'<span class="pill">'+g+'</span>').join(' ') : '<span class="dim">, </span>') + '</p>' +
     '<p style="margin:4px 0"><span class="dim">Gap in our creator-network markets:</span><br>' + pills(net) + '</p>' +
     '<details class="gap-all" style="margin-top:4px"><summary>Expand all countries (' + all.length + ' gaps)</summary><p style="margin:6px 0">' + pills(all) + '</p></details></div>';
 }
@@ -749,7 +793,7 @@ function wireClaimButtons(scope){
   scope.querySelectorAll('.copy-link').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
     navigator.clipboard.writeText(location.origin + location.pathname + '#/app/' + encodeURIComponent(b.dataset.id))
-      .then(() => toast('Link copied — share it', 'ok')).catch(() => toast('Copy failed', 'err'));
+      .then(() => toast('Link copied, share it', 'ok')).catch(() => toast('Copy failed', 'err'));
   });
   scope.querySelectorAll('.cw-timer').forEach(el => {
     const ms = new Date(el.dataset.by).getTime() - Date.now();
@@ -775,7 +819,7 @@ async function api(p, opts){
       return { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) };
     } catch (e) {
       clearTimeout(timer);
-      if (attempt >= 2) return { ok: false, status: 0, data: { error: 'network error — please retry' } };
+      if (attempt >= 2) return { ok: false, status: 0, data: { error: 'network error, please retry' } };
       await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt))); // retry transient network/cold-start
     }
   }
@@ -825,7 +869,7 @@ async function doClaim(id, name, cat){
   if (r.status === 401) { setMe(null); openLogin(); return; }
   if (!r.ok) { toast((r.data && r.data.error) || 'Claim failed', 'err'); await loadState(); refreshAll(); reopenDetail(id); return; }
   if (r.data && r.data.won === false) toast('Already claimed by ' + (r.data.claimed_by||'someone'), 'err');
-  else toast('✓ Claimed — you have 24h to start', 'ok');
+  else toast('✓ Claimed, you have 24h to start', 'ok');
   await loadState(); refreshAll(); reopenDetail(id);  // re-sync from authoritative server state
 }
 async function doStart(id){
@@ -837,7 +881,7 @@ async function doStart(id){
 async function doRelease(id){
   const r = await api('/api/release', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  toast(r.ok ? 'Released — back in the pool' : ((r.data && r.data.error) || 'Release failed'), r.ok ? 'ok' : 'err');
+  toast(r.ok ? 'Released, back in the pool' : ((r.data && r.data.error) || 'Release failed'), r.ok ? 'ok' : 'err');
   await loadState(); refreshAll(); reopenDetail(id);
 }
 function reopenDetail(id){
@@ -849,8 +893,8 @@ function reopenDetail(id){
 }
 function hlCardJS(r){
   const c = CLAIMS[r.id];
-  const tail = c ? '<span class="hl-claimed">claimed · '+escq(c.manager_name)+'</span>' : '<span class="hl-meta">'+escq(r.category||'–')+' · '+escq(r.build||'?')+'</span>';
-  return '<button class="hl-card" data-id="'+escq(r.id)+'"><span class="hl-play">'+(r.play!=null?r.play.toFixed(0):'–')+'</span><span class="hl-name">'+escq(r.name)+'</span>'+tail+'</button>';
+  const tail = c ? '<span class="hl-claimed">claimed · '+escq(c.manager_name)+'</span>' : '<span class="hl-meta">'+escq(r.category||'-')+' · '+escq(r.build||'?')+'</span>';
+  return '<button class="hl-card" data-id="'+escq(r.id)+'"><span class="hl-play">'+(r.play!=null?r.play.toFixed(0):'-')+'</span><span class="hl-name">'+escq(r.name)+'</span>'+tail+'</button>';
 }
 function renderHome(){
   const body = $('#home-body'); if (!body) return;
@@ -877,7 +921,7 @@ function renderAdvisorReport(rep, grounded){
   const list = (arr, fn) => (arr&&arr.length) ? '<ul style="margin:4px 0 0;padding-left:18px">'+arr.map(fn).join('')+'</ul>' : '<span class="dim">none</span>';
   const sec = (title, inner) => '<div class="panel" style="margin-top:10px"><div style="font-weight:600;margin-bottom:6px">'+title+'</div>'+inner+'</div>';
   let h = sec('📍 Positioning', '<p style="margin:0">'+escq(rep.positioning||'')+'</p>');
-  h += sec('🕳️ Feature gaps', list(rep.feature_gaps, g => '<li style="margin-bottom:5px"><b>'+escq(g.feature)+'</b>'+(g.seen_in?' <span class="dim">— '+escq(g.seen_in)+'</span>':'')+'<br><span class="dim">'+escq(g.why_it_matters||'')+'</span></li>'));
+  h += sec('🕳️ Feature gaps', list(rep.feature_gaps, g => '<li style="margin-bottom:5px"><b>'+escq(g.feature)+'</b>'+(g.seen_in?' <span class="dim">,  '+escq(g.seen_in)+'</span>':'')+'<br><span class="dim">'+escq(g.why_it_matters||'')+'</span></li>'));
   h += sec('✨ Differentiation', list(rep.differentiation, d => '<li style="margin-bottom:5px"><b>'+escq(d.idea)+'</b><br><span class="dim">'+escq(d.rationale||'')+'</span></li>'));
   const pr = rep.pricing||{};
   h += sec('💳 Pricing &amp; paywall', '<p style="margin:0 0 6px">'+escq(pr.assessment||'')+'</p>'+list(pr.recommendations, r => '<li>'+escq(r)+'</li>'));
@@ -894,10 +938,10 @@ async function renderAdmin(){
   const claims = r.data.claims||[], subs = r.data.submissions||[], mgrs = r.data.managers||[];
   const byMgr = {}; claims.forEach(c => { (byMgr[c.manager_name] = byMgr[c.manager_name]||[]).push(c); });
   let h = '<h4 style="margin:0 0 8px">Managers ('+mgrs.length+')</h4>';
-  h += mgrs.map(m => { const cs = byMgr[m.name]||[]; return '<div style="margin-bottom:10px"><b>'+escq(m.name)+'</b>'+(m.role==='admin'?' <span class="pill">admin</span>':'')+' <span class="dim">— '+cs.length+' claim(s)</span>'+(cs.length?'<br>'+cs.map(c=>'<span class="pill">'+escq(c.subject_name||c.subject_id)+' · '+escq(c.status)+'</span>').join(' '):'')+'</div>'; }).join('') || '<span class="dim">none</span>';
+  h += mgrs.map(m => { const cs = byMgr[m.name]||[]; return '<div style="margin-bottom:10px"><b>'+escq(m.name)+'</b>'+(m.role==='admin'?' <span class="pill">admin</span>':'')+' <span class="dim">,  '+cs.length+' claim(s)</span>'+(cs.length?'<br>'+cs.map(c=>'<span class="pill">'+escq(c.subject_name||c.subject_id)+' · '+escq(c.status)+'</span>').join(' '):'')+'</div>'; }).join('') || '<span class="dim">none</span>';
   h += '<h4 style="margin:14px 0 8px">Submitted ideas ('+subs.length+')</h4>';
   h += subs.length ? '<div style="overflow-x:auto"><table><thead><tr><th>By</th><th>App</th><th>Category</th><th>Market</th><th>Pitch</th><th>When</th></tr></thead><tbody>' +
-    subs.map(s=>'<tr><td>'+escq(s.manager_name)+'</td><td>'+escq(s.app_name)+'</td><td>'+escq(s.category||'–')+'</td><td>'+escq(s.market||'–')+'</td><td style="max-width:340px">'+escq(s.pitch||'')+'</td><td class="dim">'+escq((s.submitted_at||'').slice(0,10))+'</td></tr>').join('') + '</tbody></table></div>'
+    subs.map(s=>'<tr><td>'+escq(s.manager_name)+'</td><td>'+escq(s.app_name)+'</td><td>'+escq(s.category||'-')+'</td><td>'+escq(s.market||'-')+'</td><td style="max-width:340px">'+escq(s.pitch||'')+'</td><td class="dim">'+escq((s.submitted_at||'').slice(0,10))+'</td></tr>').join('') + '</tbody></table></div>'
     : '<span class="dim">No submissions yet.</span>';
   el.innerHTML = h;
 }
@@ -952,7 +996,7 @@ function renderCmdk(q){
   const tabs = CMDK_TABS.filter(t=>!q||t.label.toLowerCase().includes(q)).map(t=>({label:t.label, sub:'', kind:'Tab', act:t.act}));
   let apps=[];
   if(q) apps = ROWS.filter(r=>r.name.toLowerCase().includes(q)||(r.developer||'').toLowerCase().includes(q)).slice(0,8)
-    .map(r=>({label:r.name, sub:(r.developer||'')+' · play '+(r.play!=null?r.play.toFixed(0):'–'), kind:'App', act:()=>{ const i=ROWS.indexOf(r); if(i>=0) openApp(i); }}));
+    .map(r=>({label:r.name, sub:(r.developer||'')+' · play '+(r.play!=null?r.play.toFixed(0):'-'), kind:'App', act:()=>{ const i=ROWS.indexOf(r); if(i>=0) openApp(i); }}));
   cmdkItems = tabs.concat(apps); cmdkSel = 0;
   const list=$('#cmdk-list'); if(!list) return;
   if(!cmdkItems.length){ list.innerHTML='<div class="cmdk-empty">No matches</div>'; return; }
@@ -1003,7 +1047,7 @@ document.querySelectorAll('.stat-chip[data-go]').forEach(c => {
 if ($('#cta-plays')) $('#cta-plays').onclick = () => showTab('plays');
 if ($('#cta-submit')) $('#cta-submit').onclick = () => showTab('submit');
 
-// Tabs — show one focused section at a time
+// Tabs, show one focused section at a time
 function showTab(t) {
   document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
@@ -1035,7 +1079,7 @@ if (sform) sform.onsubmit = async (e) => {
   $('#sf-msg').textContent = 'Submitting…';
   const r = await api('/api/submit', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ appName: $('#sf-name').value, category: $('#sf-cat').value, market: $('#sf-market').value, pitch: $('#sf-pitch').value, details: { by: $('#sf-by').value, team: $('#sf-team').value, why: $('#sf-why').value } }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  $('#sf-msg').textContent = r.ok ? '✓ Submitted — the team has been pinged. Thank you!' : (r.data.error || 'Failed');
+  $('#sf-msg').textContent = r.ok ? '✓ Submitted, the team has been pinged. Thank you!' : (r.data.error || 'Failed');
   if (r.ok) { ['sf-by','sf-team','sf-name','sf-pitch','sf-why','sf-cat','sf-market'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
 };
 
@@ -1046,8 +1090,8 @@ if (aform) aform.onsubmit = async (e) => {
   e.preventDefault();
   if (!ME) { openLogin(); return; }
   const go = $('#adv-go');
-  go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20–30s';
-  // Direct fetch with a long timeout — the shared api() helper aborts at 10s and
+  go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20-30s';
+  // Direct fetch with a long timeout, the shared api() helper aborts at 10s and
   // retries, which is wrong for a ~20-30s LLM call (it surfaces as "network error").
   let r;
   try {
@@ -1058,7 +1102,7 @@ if (aform) aform.onsubmit = async (e) => {
       paidFeatures: $('#adv-paid').value, competitors: $('#adv-comp').value, notes: $('#adv-notes').value }), signal: ctrl.signal });
     clearTimeout(timer);
     r = { ok: res.ok, status: res.status, data: await res.json().catch(() => ({})) };
-  } catch (err) { r = { ok: false, status: 0, data: { error: 'timed out — please try again' } }; }
+  } catch (err) { r = { ok: false, status: 0, data: { error: 'timed out, please try again' } }; }
   go.disabled = false;
   if (r.status === 401) { setMe(null); openLogin(); $('#adv-msg').textContent=''; return; }
   if (!r.ok) { $('#adv-msg').textContent = (r.data && r.data.error) || 'Failed'; return; }
@@ -1108,7 +1152,7 @@ loadState().then(refreshAll);`;
   const top100 = rows.filter((r) => (r!.play_rank ?? 0) <= 100 && r!.play_rank > 0).length;
   const minRows = Number(process.env.MIN_DASHBOARD_ROWS ?? 500);
   if (rows.length < minRows || top100 < 50) {
-    throw new Error(`build gate: ${rows.length} rows / ${top100} top-plays — refusing to ship a thin dashboard (set MIN_DASHBOARD_ROWS to override)`);
+    throw new Error(`build gate: ${rows.length} rows / ${top100} top-plays, refusing to ship a thin dashboard (set MIN_DASHBOARD_ROWS to override)`);
   }
   writeFileSync(out, html);
   await bundleFunctions();   // public/api/*.mjs (claim/login/admin endpoints)
@@ -1135,7 +1179,7 @@ async function publishDashboard(html: string): Promise<boolean> {
   });
   if (error) {
     if (/bucket not found/i.test(error.message)) {
-      log.info('dashboard publish skipped — create a public "dashboard" bucket in Supabase Storage to go live');
+      log.info('dashboard publish skipped, create a public "dashboard" bucket in Supabase Storage to go live');
     } else {
       log.error('dashboard publish failed', { err: error.message });
     }
