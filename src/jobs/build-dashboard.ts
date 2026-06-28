@@ -45,6 +45,13 @@ async function bundleFunctions() {
     bundle: true, platform: 'node', format: 'esm', target: 'node20',
     outExtension: { '.js': '.mjs' }, logLevel: 'error',
   });
+  // Competitive Analysis tool — separate entry under src/compete, same public/api
+  // dir. Without this the nightly never builds compete.mjs, so /api/compete 404s.
+  await esbuild.build({
+    entryPoints: [path.join(process.cwd(), 'src', 'compete', 'apps-entry.ts')],
+    outfile: path.join(process.cwd(), 'public', 'api', 'compete.mjs'),
+    bundle: true, platform: 'node', format: 'esm', target: 'node20', logLevel: 'error',
+  });
 }
 
 /** Hard gate: never ship a build where a secret value leaked into the public bundle. */
