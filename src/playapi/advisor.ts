@@ -113,7 +113,7 @@ Use your own knowledge of the named competitors AND the tracked apps above. Be s
 - pricing: assessment of their free/paid split (is too much free? is the paywall in the right place?) plus recommendations — concrete paywall/pricing moves (what to gate, price points, trial/subscription structure). 2-5 recommendations.
 - quick_wins: prioritized, concrete next steps the team could ship soon. 3-6 short imperative bullets.
 
-Be honest about weaknesses. Don't pad. Ground every claim in a real competitor or market dynamic.`;
+Be honest about weaknesses. Ground every claim in a real competitor or market dynamic. Keep it tight: 1-2 sentences per item, no padding — the whole report must fit in the response budget.`;
 }
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
@@ -141,10 +141,11 @@ export default async function handler(req: IncomingMessage & { method?: string }
     const client = new Anthropic();
     const response = await client.messages.create({
       model,
-      max_tokens: 2000,
+      max_tokens: 3500,
       messages: [{ role: 'user', content: advisorPrompt({ appName, category, freeFeatures, paidFeatures, competitors, notes, catalog }) }],
       output_config: { format: { type: 'json_schema', schema: ADVISOR_SCHEMA as unknown as Record<string, unknown> } },
     });
+    if (response.stop_reason === 'max_tokens') return json(res, 502, { error: 'report was too long — trim a few features and retry' });
     const text = response.content.find((c) => c.type === 'text');
     if (!text || text.type !== 'text') return json(res, 502, { error: 'no report produced, try again' });
     const report = JSON.parse(text.text);
