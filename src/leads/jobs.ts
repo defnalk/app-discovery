@@ -11,6 +11,7 @@ import { getLeadsDb, type EventRow, type LeadJoined } from './db.ts';
 import { instantlyEnabled, listEmails, campaignAnalytics } from './instantly.ts';
 import { runSignalRefresh } from './signals.ts';
 import { runCull } from './cull-non-apps.ts';
+import { runFreshLeads } from './fresh-leads.ts';
 
 const DAY = 86_400_000;
 
@@ -184,4 +185,5 @@ export const nightlyJobs = [
   { name: 'funnel_rollup', run: runFunnelRollup },
   { name: 'suggestion_engine', run: runSuggestionEngine },
   { name: 'strategy_rollup', run: runStrategyRollup },
+  { name: 'fresh_leads', run: runFreshLeads }, // dedup fresh apps vs used list, stage net-new ICP leads
 ];
