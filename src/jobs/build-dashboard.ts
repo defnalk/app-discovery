@@ -3,7 +3,7 @@
  * Read-only. Search + filters (geo, category, first_seen window, momentum
  * threshold, geo_gap only), sortable by momentum, rank sparkline per row.
  */
-import { writeFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import { log } from '../lib/log.ts';
@@ -45,13 +45,17 @@ async function bundleFunctions() {
     bundle: true, platform: 'node', format: 'esm', target: 'node20',
     outExtension: { '.js': '.mjs' }, logLevel: 'error',
   });
-  // Competitive Analysis tool — separate entry under src/compete, same public/api
-  // dir. Without this the nightly never builds compete.mjs, so /api/compete 404s.
-  await esbuild.build({
-    entryPoints: [path.join(process.cwd(), 'src', 'compete', 'apps-entry.ts')],
-    outfile: path.join(process.cwd(), 'public', 'api', 'compete.mjs'),
-    bundle: true, platform: 'node', format: 'esm', target: 'node20', logLevel: 'error',
-  });
+  // Competitive Analysis tool — separate entry under src/compete. Only bundle when
+  // the source is present (it may be uncommitted WIP); a missing entry must NOT
+  // fail the whole dashboard build.
+  const competeEntry = path.join(process.cwd(), 'src', 'compete', 'apps-entry.ts');
+  if (existsSync(competeEntry)) {
+    await esbuild.build({
+      entryPoints: [competeEntry],
+      outfile: path.join(process.cwd(), 'public', 'api', 'compete.mjs'),
+      bundle: true, platform: 'node', format: 'esm', target: 'node20', logLevel: 'error',
+    });
+  }
 }
 
 /** Hard gate: never ship a build where a secret value leaked into the public bundle. */
@@ -434,16 +438,53 @@ export async function buildDashboard() {
 </section>
 
 <section class="tabpane" id="tab-submit">
-  <p class="muted-note" style="margin:0 0 10px">Submit a play idea for the team. Admins (Defne &amp; Hussain) review submissions in the Admin tab.</p>
-  <div class="panel" style="max-width:680px">
-    <div id="submit-gate" class="dim">Please <a href="#" id="submit-signin" style="color:var(--acc)">sign in</a> to submit a play idea.</div>
-    <form id="submit-form" style="display:none">
-      <div style="display:grid;gap:10px;max-width:560px">
-        <label>App / play name<br><input id="sf-name" type="text" style="width:100%" maxlength="200" required></label>
-        <label>Category<br><input id="sf-cat" type="text" list="cat-list" style="width:100%" maxlength="100"></label>
-        <label>Target market(s)<br><input id="sf-market" type="text" placeholder="e.g. US, BR, TR" style="width:100%" maxlength="100"></label>
-        <label>Pitch — why is this a good play?<br><textarea id="sf-pitch" rows="4" style="width:100%" maxlength="4000"></textarea></label>
-        <div style="display:flex;gap:10px;align-items:center"><button type="submit">Submit play idea</button><span id="sf-msg" class="dim"></span></div>
+  <div id="submit-gate" class="dim" style="padding:6px 0">Please <a href="#" id="submit-signin" style="color:var(--acc)">sign in</a> with your 8x.social email to submit a play.</div>
+  <div id="submit-wrap" class="pb" style="display:none">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+      .pb{--paper:#EFEEE9;--surface:#FCFBF8;--ink:#1B1B1A;--muted:#6E6E66;--line:#DDDCD3;--go:#0E7C66;--go-dark:#0A5F4E;--rust:#B2462E;max-width:720px}
+      .pb .sheet{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px -18px rgba(0,0,0,.6);overflow:hidden;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+      .pb .sheet-head{padding:22px 26px 18px;border-bottom:1px solid var(--line);background:repeating-linear-gradient(90deg,transparent 0 38px,rgba(14,124,102,.05) 38px 39px),var(--surface)}
+      .pb .eyebrow{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--go);margin:0 0 6px}
+      .pb .sheet-head h2{font-family:"Bricolage Grotesque","IBM Plex Sans";font-weight:700;font-size:23px;letter-spacing:-.02em;margin:0;color:var(--ink)}
+      .pb .sheet-head .sub{margin:6px 0 0;font-size:13.5px;color:var(--muted);max-width:52ch}
+      .pb form{padding:0 26px 26px}
+      .pb .field{padding:15px 0;border-bottom:1px solid var(--line)}
+      .pb .field:last-of-type{border-bottom:0}
+      .pb .field label{display:block;font-weight:600;font-size:14px;margin-bottom:3px;color:var(--ink)}
+      .pb .field .hint{font-size:12.5px;color:var(--muted);margin:0 0 9px}
+      .pb .req{color:var(--rust);font-family:"IBM Plex Mono";font-size:11px;font-weight:600}
+      .pb .row{display:flex;gap:14px;flex-wrap:wrap}
+      .pb .row>.field{flex:1;min-width:200px;border-bottom:0;padding:0}
+      .pb input[type=text],.pb textarea{width:100%;font-family:"IBM Plex Sans";font-size:14.5px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+      .pb textarea{resize:vertical;min-height:76px;line-height:1.55}
+      .pb input:focus,.pb textarea:focus{outline:2px solid var(--go);outline-offset:1px;border-color:transparent;background:#fff}
+      .pb .actions{display:flex;align-items:center;gap:14px;padding-top:20px;flex-wrap:wrap}
+      .pb .btn-go{font-family:"IBM Plex Sans";font-weight:600;font-size:14.5px;border-radius:10px;cursor:pointer;border:0;padding:11px 20px;background:var(--go);color:#fff}
+      .pb .btn-go:hover{background:var(--go-dark)} .pb .btn-go:disabled{opacity:.55;cursor:not-allowed}
+      .pb .sf-msg{font-family:"IBM Plex Mono";font-size:12.5px;color:var(--go-dark);font-weight:600}
+    </style>
+    <form id="submit-form" novalidate>
+      <div class="sheet">
+        <div class="sheet-head">
+          <p class="eyebrow">New play pitch</p>
+          <h2>Make the case for a play</h2>
+          <p class="sub">Tell us what to build, who it's for in-market, and the proof behind it. It pings the team the moment you submit.</p>
+        </div>
+        <div class="row" style="padding:14px 26px 0">
+          <div class="field"><label>Your name</label><input id="sf-by" type="text" autocomplete="name" placeholder="Who's pitching?" maxlength="80"></div>
+          <div class="field"><label>Team / role</label><input id="sf-team" type="text" placeholder="e.g. Growth PM" maxlength="80"></div>
+        </div>
+        <div style="padding:0 26px">
+          <div class="field"><label>Play name <span class="req">required</span></label><input id="sf-name" type="text" placeholder="Working name for the product" maxlength="200" required></div>
+          <div class="field"><label>One-line pitch <span class="req">required</span></label><p class="hint">If you only get one sentence — what is this play?</p><input id="sf-pitch" type="text" placeholder="A ___ that helps ___ do ___" maxlength="400"></div>
+          <div class="field"><label>Why build this?</label><p class="hint">The proof: demand signal, gap, momentum.</p><textarea id="sf-why" maxlength="3000"></textarea></div>
+          <div class="row">
+            <div class="field"><label>Category</label><input id="sf-cat" type="text" list="cat-list" placeholder="e.g. Health &amp; Fitness" maxlength="100"></div>
+            <div class="field"><label>Target market(s)</label><input id="sf-market" type="text" placeholder="e.g. US, BR, TR" maxlength="100"></div>
+          </div>
+          <div class="actions"><button type="submit" class="btn-go">Submit play ▸</button><span id="sf-msg" class="sf-msg"></span></div>
+        </div>
       </div>
     </form>
   </div>
@@ -764,8 +805,8 @@ function renderHome(){
   body.querySelectorAll('.hl-card').forEach(c => c.onclick = () => { const i = ROWS.findIndex(r=>r.id===c.dataset.id); if (i>=0) openApp(i); });
 }
 function renderSubmitGate(){
-  const gate = $('#submit-gate'), form = $('#submit-form'); if (!gate||!form) return;
-  gate.style.display = ME ? 'none' : ''; form.style.display = ME ? '' : 'none';
+  const gate = $('#submit-gate'), wrap = $('#submit-wrap'); if (!gate||!wrap) return;
+  gate.style.display = ME ? 'none' : ''; wrap.style.display = ME ? '' : 'none';
 }
 function renderAdvisorGate(){
   const gate = $('#advisor-gate'), form = $('#advisor-form'); if (!gate||!form) return;
@@ -895,10 +936,10 @@ if (sform) sform.onsubmit = async (e) => {
   e.preventDefault();
   if (!ME) { openLogin(); return; }
   $('#sf-msg').textContent = 'Submitting…';
-  const r = await api('/api/submit', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ appName: $('#sf-name').value, category: $('#sf-cat').value, market: $('#sf-market').value, pitch: $('#sf-pitch').value, details: {} }) });
+  const r = await api('/api/submit', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ appName: $('#sf-name').value, category: $('#sf-cat').value, market: $('#sf-market').value, pitch: $('#sf-pitch').value, details: { by: $('#sf-by').value, team: $('#sf-team').value, why: $('#sf-why').value } }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
-  $('#sf-msg').textContent = r.ok ? '✓ Submitted, thank you!' : (r.data.error || 'Failed');
-  if (r.ok) { ['sf-name','sf-cat','sf-market','sf-pitch'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
+  $('#sf-msg').textContent = r.ok ? '✓ Submitted — the team has been pinged. Thank you!' : (r.data.error || 'Failed');
+  if (r.ok) { ['sf-by','sf-team','sf-name','sf-pitch','sf-why','sf-cat','sf-market'].forEach(id => { $('#'+id).value=''; }); if (ME.role==='admin') renderAdmin(); }
 };
 
 // Advisor wiring
