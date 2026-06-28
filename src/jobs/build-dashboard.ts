@@ -549,6 +549,12 @@ const ALL_GEOS = ${embedJson([...COUNTRIES])};
 const NET_GEOS = ${embedJson(LARGE_MARKETS)};
 let CLAIMS = {};   // subject_id -> claim row (apps), from /api/plays-state
 let ME = null;     // {name, role} UI hint; the HttpOnly cookie is the real gate
+function clearFilters(){
+  ['q','geo','cat','seen','mom'].forEach(id => { const el = $('#'+id); if (el) el.value=''; });
+  ['gap','avail','mine'].forEach(id => { const el = $('#'+id); if (el && el.checked !== undefined) el.checked = false; });
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', (x.dataset.cat||'') === ''));
+  render();
+}
 function render() {
   const q = $('#q').value.toLowerCase(), geo = $('#geo').value, cat = $('#cat').value;
   const seen = $('#seen').value ? Date.now() - (+$('#seen').value)*864e5 : null;
@@ -568,6 +574,14 @@ function render() {
   const shown = rows.slice(0, CAP);
   $('#count').innerHTML = rows.length <= CAP ? (rows.length + ' shown') : '<span class="results-badge">top ' + CAP + ' of ' + rows.length + ' — narrow by category/search</span>';
   saveFilters();
+  if (!shown.length) {
+    $('#t tbody').innerHTML = '<tr><td colspan="13"><div style="text-align:center;padding:46px 20px;color:var(--dim)">' +
+      '<div style="font-size:15px;color:var(--txt);font-weight:600;margin-bottom:6px">No plays match these filters</div>' +
+      '<div style="margin-bottom:14px">Try another category, or clear everything to see all ' + ROWS.length + ' apps.</div>' +
+      '<button class="ghost" id="clear-filters">Clear filters</button></div></td></tr>';
+    const cb = document.getElementById('clear-filters'); if (cb) cb.onclick = clearFilters;
+    return;
+  }
   $('#t tbody').innerHTML = shown.map((r, i) => '<tr class="approw' + (r.play_rank <= 100 ? ' play-top' : '') + (CLAIMS[r.id] ? ' claimed' : '') + '" data-i="' + ROWS.indexOf(r) + '" style="cursor:pointer">' +
     '<td class="num"><b' + (r.play_rank <= 100 ? ' class="play-hi"' : '') + '>' + (r.play != null ? r.play.toFixed(1) : '–') + '</b>' + (r.play_rank <= 100 ? '<span class="playbadge">#' + r.play_rank + '</span>' : '') + '</td>' +
     '<td><b>' + escq(r.name) + '</b>' + (r.incumbent ? ' <span class="pill">incumbent</span>' : '') +
