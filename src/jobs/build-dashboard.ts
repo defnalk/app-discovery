@@ -821,7 +821,7 @@ function detailHtml(r) {
         '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'-') + '</b>, ' + escq(r.build_note||'') + '</p>' +
         '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '-') + '</b>, ' + escq(r.sat_note||'') + '</p>'
       ) : '<p class="dim">not analyzed yet, top-momentum apps are analyzed nightly</p>') +
-      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p></div>' +
+      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <a href="/compete?app=' + encodeURIComponent(r.name) + '&category=' + encodeURIComponent(r.category||'') + '" style="color:var(--acc)">🥊 Competitive landscape ↗</a> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p></div>' +
     gapsHtml(r) + '</div>';
 }
 // --- Play ops: claim widget, geo gaps, login, claim/start/release, submit, admin ---
@@ -1080,10 +1080,17 @@ function closeCmdk(){ const m=$('#cmdk'); if(m) m.classList.remove('show'); }
 function renderCmdk(q){
   q=(q||'').trim().toLowerCase();
   const tabs = CMDK_TABS.filter(t=>!q||t.label.toLowerCase().includes(q)).map(t=>({label:t.label, sub:'', kind:'Tab', act:t.act}));
-  let apps=[];
-  if(q) apps = ROWS.filter(r=>r.name.toLowerCase().includes(q)||(r.developer||'').toLowerCase().includes(q)).slice(0,8)
-    .map(r=>({label:r.name, sub:(r.developer||'')+' · play '+(r.play!=null?r.play.toFixed(0):'-'), kind:'App', act:()=>{ const i=ROWS.indexOf(r); if(i>=0) openApp(i); }}));
-  cmdkItems = tabs.concat(apps); cmdkSel = 0;
+  const openByRow = r => ()=>{ const i=ROWS.indexOf(r); if(i>=0) openApp(i); };
+  // Empty query: surface YOUR claimed plays as quick-access. With a query: search apps and tag claims.
+  let claims=[], apps=[];
+  if(!q){
+    claims = ROWS.filter(r=>CLAIMS[r.id] && ME && CLAIMS[r.id].manager_name===ME.name).slice(0,6)
+      .map(r=>({label:r.name, sub:'your claim · '+(CLAIMS[r.id].status||''), kind:'Claim', act:openByRow(r)}));
+  } else {
+    apps = ROWS.filter(r=>r.name.toLowerCase().includes(q)||(r.developer||'').toLowerCase().includes(q)).slice(0,8)
+      .map(r=>{ const c=CLAIMS[r.id]; return {label:r.name, sub:(c?('claimed by '+c.manager_name):(r.developer||''))+' · play '+(r.play!=null?r.play.toFixed(0):'-'), kind:c?'Claim':'App', act:openByRow(r)}; });
+  }
+  cmdkItems = tabs.concat(claims).concat(apps); cmdkSel = 0;
   const list=$('#cmdk-list'); if(!list) return;
   if(!cmdkItems.length){ list.innerHTML='<div class="cmdk-empty">No matches</div>'; return; }
   list.innerHTML = cmdkItems.map((it,n)=>'<div class="cmdk-item'+(n===0?' sel':'')+'" data-n="'+n+'"><span class="ci-kind">'+it.kind+'</span><span>'+escq(it.label)+'</span>'+(it.sub?'<span class="ci-sub">'+escq(it.sub)+'</span>':'')+'</div>').join('');
