@@ -44,7 +44,7 @@ export function pageShell(opts: { title: string; active: string; body: string; s
   th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; }
   th.sorth:hover { color:var(--acc); }
   tr:hover td { background:#1a2130; }
-  input[type=text], input[type=search], select, input[type=number], input[type=date] {
+  input[type=text], input[type=search], select, input[type=number], input[type=date], textarea {
     background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px; }
   .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .filters label { color:var(--dim); font-size:12px; display:flex; gap:6px; align-items:center; }
