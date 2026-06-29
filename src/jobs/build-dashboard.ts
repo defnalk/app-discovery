@@ -800,6 +800,26 @@ function openDetailRow(tr) {
   tr.after(d);
   wireClaimButtons(d);
 }
+// "Why it scored X": the five Play-score signals as compact bars (glance layer);
+// the written analysis notes below are the deeper read.
+function scoreBreakdown(r){
+  if (r.play == null) return '';
+  const bs = { weekend:1, few_days:0.85, week_or_two:0.6, months:0.25, too_complex:0.08 };
+  const sig = [
+    ['Idea', (r.idea||0)/10, r.idea != null ? r.idea + '/10' : '-'],
+    ['Momentum', Math.min((r.momentum||0)/3, 1), (r.momentum||0).toFixed(2)],
+    ['Open market', r.sat != null ? 1 - r.sat : 0.5, r.sat != null ? (100 - r.sat*100).toFixed(0) + '%' : '-'],
+    ['Build speed', bs[r.build] ?? 0.4, r.build || '-'],
+    ['Traction', Math.min(Math.log10(1 + (r.rating_count||0))/6, 1), fmt(r.rating_count)],
+  ];
+  const bar = (label, v, val) => '<div style="display:flex;align-items:center;gap:10px;margin:5px 0">' +
+    '<span style="width:92px;font-size:12px;color:var(--muted);flex:none">' + label + '</span>' +
+    '<span style="flex:1;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden"><span style="display:block;height:100%;width:' + Math.round(Math.max(0,Math.min(1,v))*100) + '%;background:var(--go)"></span></span>' +
+    '<span style="width:66px;text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--ink);flex:none">' + escq(String(val)) + '</span></div>';
+  return '<div style="margin-top:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface)">' +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px"><span style="font-family:var(--display);font-weight:800;font-size:22px;color:var(--go-dark)">' + r.play.toFixed(1) + '</span><span style="font-size:12px;color:var(--muted)">Play score, how this app breaks down</span></div>' +
+    sig.map(s => bar(s[0], s[1], s[2])).join('') + '</div>';
+}
 function detailHtml(r) {
   const deltaRows = (r.deltas||[]).map(d => '<tr><td><span class="pill">' + d.geo + '</span></td>' +
     '<td class="num">' + (d.now ?? '-') + '</td>' +
@@ -811,6 +831,7 @@ function detailHtml(r) {
     '<td class="num">' + (d.growth ? (d.growth * 100).toFixed(1) + '%' : '-') + '</td></tr>').join('');
   const an = r.idea != null || r.build || r.sat != null;
   return claimWidget(r) +
+    scoreBreakdown(r) +
     '<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:12px">' +
     '<div><h4 style="margin:0 0 6px">Rank deltas (7d) per geo</h4>' +
       '<table style="min-width:320px"><thead><tr><th>Geo</th><th class="num">Rank now</th><th class="num">Rank -7d</th><th class="num">Velocity</th><th class="num">Rating growth</th></tr></thead>' +
