@@ -976,7 +976,7 @@ async function doClaim(id, name, cat){
   if (r.status === 401) { setMe(null); openLogin(); return; }
   if (!r.ok) { toast((r.data && r.data.error) || 'Claim failed', 'err'); await loadState(); refreshAll(); reopenDetail(id); return; }
   if (r.data && r.data.won === false) toast('Already claimed by ' + (r.data.claimed_by||'someone'), 'err');
-  else toast('✓ Claimed, you have 24h to start', 'ok');
+  else toast(r.data && r.data.notified ? '✓ Claimed, team pinged on Slack' : '✓ Claimed, you have 24h to start', 'ok');
   await loadState(); refreshAll(); reopenDetail(id);  // re-sync from authoritative server state
 }
 async function doStart(id){

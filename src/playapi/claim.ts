@@ -3,6 +3,22 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getServiceClient, readSession, readJsonBody, json, str, subjType, checkRateLimit } from './_lib.ts';
 
+/** Best-effort Slack ping when a play is claimed. No-op if PLAY_SLACK_WEBHOOK unset. */
+async function notifyClaimSlack(manager: string, appName: string): Promise<boolean> {
+  const url = process.env.PLAY_SLACK_WEBHOOK;
+  if (!url) return false;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    await fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: `:hammer_and_wrench: *${manager}* claimed *${appName || 'a play'}*` }),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer));
+    return true;
+  } catch (err) { console.error('claim: slack notify failed (non-fatal):', String(err)); return false; }
+}
+
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' });
   const sess = readSession(req);
@@ -22,5 +38,6 @@ export default async function handler(req: IncomingMessage & { method?: string }
     p_manager: sess.name,
   });
   if (error) { console.error('claim_play RPC failed:', error.message); return json(res, 500, { error: 'claim failed' }); }
-  return json(res, 200, data); // { won, claim } | { won:false, claimed_by, claim }
+  const notified = (data && (data as { won?: boolean }).won) ? await notifyClaimSlack(sess.name, str(b.subjectName, 300)) : false;
+  return json(res, 200, { ...(data as Record<string, unknown>), notified }); // { won, claim, notified } | { won:false, claimed_by, claim, notified:false }
 }
