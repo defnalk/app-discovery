@@ -1,0 +1,36 @@
+name: deploy-dashboard
+# Lightweight, reliable deploy for CODE/UI changes: rebuild the dashboard from the
+# EXISTING store data and push to Vercel, skipping the flaky ~25-min nightly ingest.
+# The nightly still owns data refresh; this owns shipping code. Manual dispatch.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      # Rebuild public/index.html + public/api/*.mjs from the current store. No ingest.
+      - run: npm run dashboard
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      - name: Deploy dashboard to Vercel
+        if: ${{ env.VERCEL_TOKEN != '' && hashFiles('public/index.html') != '' }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: public
+        run: |
+          TOKEN="$(printf '%s' "$VERCEL_TOKEN" | tr -d '[:space:]')"
+          npx vercel@54 deploy --prod --yes --token "$TOKEN"
