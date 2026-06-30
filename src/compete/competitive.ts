@@ -175,8 +175,15 @@ async function searchStoreDb(app: string, category: string, limit: number): Prom
 
 /** Merge Play-search + store-DB candidates, de-duping by store_id then name. */
 export async function discoverCompetitors(app: string, category: string, limit = 8): Promise<CompetitorCandidate[]> {
+  // The Apify Google Play search can take ~45s, which alone blows the 60s function
+  // cap before Claude even starts. Cap it: take its seeds if they arrive quickly,
+  // otherwise proceed with the local store (Claude adds the well-known competitors
+  // from its own knowledge regardless). The local DB search is fast and always runs.
+  const PLAY_BUDGET_MS = 9_000;
+  const withTimeout = (p: Promise<CompetitorCandidate[]>): Promise<CompetitorCandidate[]> =>
+    Promise.race([p.catch(() => []), new Promise<CompetitorCandidate[]>((res) => setTimeout(() => res([]), PLAY_BUDGET_MS))]);
   const [fromPlay, fromDb] = await Promise.all([
-    searchGooglePlay(`${app} ${category}`.trim(), limit),
+    withTimeout(searchGooglePlay(`${app} ${category}`.trim(), limit)),
     searchStoreDb(app, category, limit),
   ]);
   const seen = new Set<string>();
