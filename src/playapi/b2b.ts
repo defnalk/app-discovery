@@ -9,13 +9,17 @@
  *  with a Supabase-backed table without changing this contract. `signal` is a 0-100
  *  traction-heat estimate; ARR/customer figures are approximate public estimates. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readSession, isAdminName, json } from './_lib.ts';
+import { readSession, json } from './_lib.ts';
 import { B2B_COMPANIES } from './b2b-data.ts';
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
   const sess = readSession(req);
-  if (!sess || sess.role !== 'admin' || !isAdminName(sess.name)) return json(res, 403, { error: 'admins only' });
+  // 401 (not 403) when signed out, so the client prompts a login instead of saying
+  // "admins only". Gate on the signed admin role, matching when the B2B tab is shown
+  // (the role token is HMAC-signed, so it can't be forged client-side).
+  if (!sess) return json(res, 401, { error: 'login required' });
+  if (sess.role !== 'admin') return json(res, 403, { error: 'admins only' });
   const companies = [...B2B_COMPANIES].sort((a, b) => b.signal - a.signal);
   return json(res, 200, { companies, count: companies.length, source: 'curated' });
 }
