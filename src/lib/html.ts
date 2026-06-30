@@ -94,7 +94,7 @@ export function pageShell(opts: { title: string; active: string; body: string; s
 </style></head>
 <body>
 <header>
-  <h1>${brand}</h1>
+  <h1><a href="${app === 'apps' ? '/' : '/leads'}" style="color:inherit;text-decoration:none" title="Back to ${brand}">${brand}</a></h1>
   <nav class="navgroup">${tabs.map(tab).join('')}</nav>
 </header>
 <main>${opts.body}</main>

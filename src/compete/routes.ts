@@ -95,6 +95,7 @@ export async function competePage(
   .histrow .hcat { color:var(--dim); }
   .histrow .hmeta { margin-left:auto; color:var(--dim); font-size:12px; white-space:nowrap; }
 </style>
+<p style="margin:0 0 14px"><a href="/" style="color:var(--go-dark);font-weight:600;text-decoration:none;font-size:14px">&larr; Back to Plays Database</a></p>
 <div class="panel">
   <h2 style="margin:0 0 4px;font-size:18px">Competitive Analysis</h2>
   <p class="dim" style="margin:0 0 12px">Drop in an app and its category to map the competitive landscape, pricing, markets, feature sets, and which features serve which ICP. The product-side counterpart to the campaign social-listening tool.</p>
