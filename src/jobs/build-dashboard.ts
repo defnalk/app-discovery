@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -487,6 +487,7 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
   <button class="tabbtn" data-tab="submit">📝 Submit a play</button>
   <button class="tabbtn" data-tab="advisor">🧭 Advisor</button>
+  <button class="tabbtn" id="b2b-tab" data-tab="b2b" style="display:none">🏢 B2B</button>
   <button class="tabbtn" id="admin-tab" data-tab="admin" style="display:none">🛠 Admin</button>
   <a class="tablink" href="/compete">🥊 Competitive</a>
   <button class="help-btn" id="help-tab" type="button" title="How it works" style="margin-left:auto;align-self:center">?</button>
@@ -617,6 +618,15 @@ export async function buildDashboard() {
     </form>
     <div id="advisor-report" style="margin-top:16px"></div>
   </div>
+</section>
+
+<section class="tabpane" id="tab-b2b">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 4px">
+    <h2 style="margin:0;font-size:20px">B2B company tracker</h2>
+    <span class="pill">admin only</span>
+  </div>
+  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. Seed list for now; the live web and TechCrunch sourcing pipeline lands next. Figures are approximate public estimates.</p>
+  <div id="b2b-body" class="panel dim">Sign in as an admin to view.</div>
 </section>
 
 <section class="tabpane" id="tab-admin">
@@ -948,6 +958,7 @@ function renderAuth(){
   const so = $('#signout'); if (so) so.onclick = () => { setMe(null); CLAIMS = {}; refreshAll(); };
   const si = $('#signin'); if (si) si.onclick = openLogin;
   const at = $('#admin-tab'); if (at) at.style.display = (ME && ME.role==='admin') ? '' : 'none';
+  const bt = $('#b2b-tab'); if (bt) bt.style.display = (ME && ME.role==='admin') ? '' : 'none';
   const ml = $('#mine-lbl'); if (ml) ml.style.display = ME ? '' : 'none';
   if (!ME && $('#mine')) $('#mine').checked = false;
 }
@@ -1050,6 +1061,29 @@ async function renderAdmin(){
   h += subs.length ? '<div style="overflow-x:auto"><table><thead><tr><th>By</th><th>App</th><th>Category</th><th>Market</th><th>Pitch</th><th>When</th></tr></thead><tbody>' +
     subs.map(s=>'<tr><td>'+escq(s.manager_name)+'</td><td>'+escq(s.app_name)+'</td><td>'+escq(s.category||'-')+'</td><td>'+escq(s.market||'-')+'</td><td style="max-width:340px">'+escq(s.pitch||'')+'</td><td class="dim">'+escq((s.submitted_at||'').slice(0,10))+'</td></tr>').join('') + '</tbody></table></div>'
     : '<span class="dim">No submissions yet.</span>';
+  el.innerHTML = h;
+}
+
+async function renderB2B(){
+  const el = $('#b2b-body'); if (!el) return;
+  if (!ME || ME.role !== 'admin') { el.className='panel dim'; el.textContent='Sign in as an admin to view.'; return; }
+  el.className='panel'; el.textContent='Loading…';
+  const r = await api('/api/b2b');
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) { el.textContent = (r.data && r.data.error) || 'Failed to load.'; return; }
+  const cos = r.data.companies || [];
+  const heat = (s) => { const w = Math.max(0, Math.min(100, s|0)); return '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:64px;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+w+'%;background:var(--go)"></span></span><b style="font-family:var(--mono);font-size:12px">'+w+'</b></span>'; };
+  let h = '<p class="dim" style="margin:0 0 10px;font-size:12px">'+cos.length+' companies · sorted by traction signal · seed data</p>';
+  h += '<div style="overflow-x:auto"><table><thead><tr><th>Company</th><th>Category</th><th>Channel</th><th>Traction</th><th>Customers</th><th>Signal</th></tr></thead><tbody>';
+  h += cos.map(c =>
+    '<tr><td><a href="'+escq(c.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600">'+escq(c.name)+'</a>'+(c.note?'<br><span class="dim" style="font-size:11.5px">'+escq(c.note)+'</span>':'')+'</td>'+
+    '<td>'+escq(c.category)+'</td>'+
+    '<td><span class="pill">'+escq(c.channel)+'</span></td>'+
+    '<td style="white-space:nowrap">'+escq(c.arr)+'</td>'+
+    '<td>'+escq(c.customers)+'</td>'+
+    '<td>'+heat(c.signal)+'</td></tr>'
+  ).join('');
+  h += '</tbody></table></div>';
   el.innerHTML = h;
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
@@ -1166,6 +1200,7 @@ function showTab(t) {
   document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
   if (t === 'admin') renderAdmin();
+  if (t === 'b2b') renderB2B();
   if (t === 'submit') renderSubmitGate();
   if (t === 'advisor') renderAdvisorGate();
   if (('#/' + t) !== location.hash) location.hash = '#/' + t;
