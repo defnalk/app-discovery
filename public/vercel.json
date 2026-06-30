@@ -2,6 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": { "api/*.mjs": { "maxDuration": 60 } },
   "rewrites": [
+    { "source": "/compete", "destination": "/api/compete" },
+    { "source": "/compete/(.*)", "destination": "/api/compete" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
