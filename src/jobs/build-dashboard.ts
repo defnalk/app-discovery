@@ -625,7 +625,7 @@ export async function buildDashboard() {
     <h2 style="margin:0;font-size:20px">B2B company tracker</h2>
     <span class="pill">admin only</span>
   </div>
-  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. <b>Build MVP</b> estimates how fast 8x could ship a credible MVP of the core wedge; the filter keeps only the ones buildable in a week max, the real plays. Curated set for now; the live web and TechCrunch auto-sourcing pipeline lands next. Figures are approximate public estimates.</p>
+  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. <b>Build MVP</b> estimates how fast 8x could ship a credible MVP of the core wedge; the filter keeps only the ones buildable in a week max, the real plays. <b>Click any company</b> for its features, MVP build plan, and competitors. Curated set for now; the live web and TechCrunch auto-sourcing pipeline lands next. Figures are approximate public estimates.</p>
   <div id="b2b-body" class="panel dim">Sign in as an admin to view.</div>
 </section>
 
@@ -1088,17 +1088,35 @@ function renderB2BTable(){
     '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13.5px;font-weight:600"><input type="checkbox" id="b2b-week"'+(b2bWeekOnly?' checked':'')+'> Buildable in a week max</label>'+
     '<span class="dim" style="font-size:12px">'+list.length+' of '+B2B_ALL.length+' companies · sorted by traction signal</span></div>';
   h += '<div style="overflow-x:auto"><table><thead><tr><th>Company</th><th>Category</th><th>Build MVP</th><th>Channel</th><th>Traction</th><th>Signal</th></tr></thead><tbody>';
-  h += list.map(c =>
-    '<tr><td><a href="'+escq(c.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600">'+escq(c.name)+'</a>'+(c.note?'<br><span class="dim" style="font-size:11.5px">'+escq(c.note)+'</span>':'')+'</td>'+
-    '<td>'+escq(c.category)+'</td>'+
-    '<td>'+buildCell(c.build)+'</td>'+
-    '<td><span class="pill">'+escq(c.channel)+'</span></td>'+
-    '<td style="white-space:nowrap">'+escq(c.arr)+'</td>'+
-    '<td>'+heat(c.signal)+'</td></tr>'
-  ).join('') || '<tr><td colspan="6" class="dim">No companies buildable in a week. Untick the filter to see all.</td></tr>';
+  const lbl = (t) => '<span class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">'+t+'</span>';
+  h += list.map((c, i) => {
+    const feats = (c.features||[]).map(f=>'<span class="pill">'+escq(f)+'</span>').join('') || '<span class="dim">not listed</span>';
+    const comps = (c.competitors||[]).map(x=>'<span class="pill">'+escq(x)+'</span>').join('') || '<span class="dim">not listed</span>';
+    const main = '<tr class="b2b-row" data-bi="'+i+'" style="cursor:pointer">'+
+      '<td><span class="b2b-arrow" style="color:var(--faint)">▸</span> <a href="'+escq(c.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600">'+escq(c.name)+'</a>'+(c.note?'<br><span class="dim" style="font-size:11.5px;margin-left:15px">'+escq(c.note)+'</span>':'')+'</td>'+
+      '<td>'+escq(c.category)+'</td>'+
+      '<td>'+buildCell(c.build)+'</td>'+
+      '<td><span class="pill">'+escq(c.channel)+'</span></td>'+
+      '<td style="white-space:nowrap">'+escq(c.arr)+'</td>'+
+      '<td>'+heat(c.signal)+'</td></tr>';
+    const detail = '<tr class="b2b-detail" id="bdetail-'+i+'" style="display:none"><td colspan="6" style="background:var(--surface-2)">'+
+      '<div style="padding:4px 6px 12px;max-width:780px">'+
+        '<div style="margin:0 0 10px">'+lbl('MVP build plan')+'<br>'+escq(c.wedge||'')+'</div>'+
+        '<div style="margin:0 0 10px">'+lbl('Features')+'<br>'+feats+'</div>'+
+        '<div>'+lbl('Competitors')+'<br>'+comps+'</div>'+
+      '</div></td></tr>';
+    return main + detail;
+  }).join('') || '<tr><td colspan="6" class="dim">No companies buildable in a week. Untick the filter to see all.</td></tr>';
   h += '</tbody></table></div>';
   el.innerHTML = h;
   const cb = $('#b2b-week'); if (cb) cb.onchange = () => { b2bWeekOnly = cb.checked; renderB2BTable(); };
+  el.querySelectorAll('.b2b-row').forEach(row => { row.onclick = (e) => {
+    if (e.target.closest('a')) return;            // let the company link work
+    const d = $('#bdetail-'+row.dataset.bi); if (!d) return;
+    const open = d.style.display === 'none';
+    d.style.display = open ? '' : 'none';
+    const ar = row.querySelector('.b2b-arrow'); if (ar) ar.textContent = open ? '▾' : '▸';
+  }; });
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
