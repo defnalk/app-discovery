@@ -174,7 +174,7 @@ async function searchStoreDb(app: string, category: string, limit: number): Prom
 }
 
 /** Merge Play-search + store-DB candidates, de-duping by store_id then name. */
-export async function discoverCompetitors(app: string, category: string, limit = 12): Promise<CompetitorCandidate[]> {
+export async function discoverCompetitors(app: string, category: string, limit = 8): Promise<CompetitorCandidate[]> {
   const [fromPlay, fromDb] = await Promise.all([
     searchGooglePlay(`${app} ${category}`.trim(), limit),
     searchStoreDb(app, category, limit),
@@ -348,7 +348,11 @@ export async function analyzeCompetitors(
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is not set, set it to run the competitive analysis.');
   }
-  const model = process.env.COMPETE_MODEL ?? 'claude-opus-4-8';
+  // Sonnet, not Opus: this runs inside Vercel's 60s function cap, and Opus generating
+  // ~8-12k tokens over the competitor set reliably blows past it. Sonnet finishes the
+  // structured analysis in ~20s at equivalent quality. Override via COMPETE_MODEL only
+  // on a plan with a longer function timeout.
+  const model = process.env.COMPETE_MODEL ?? 'claude-sonnet-4-6';
   const webSearch = ['1', 'true', 'yes'].includes((process.env.ANTHROPIC_WEB_SEARCH ?? '').toLowerCase());
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic();
@@ -358,7 +362,7 @@ export async function analyzeCompetitors(
   // the prompt (forced json_schema output is reserved for the no-tool path, where
   // there is no tool loop to interleave with). Without it we pin output_config so
   // the structure is guaranteed every run, the convention from jobs/analyze.ts.
-  const base: Record<string, unknown> = { model, max_tokens: 12_000 };
+  const base: Record<string, unknown> = { model, max_tokens: 8_000 };
   if (webSearch) {
     base.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
   } else {
