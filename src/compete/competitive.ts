@@ -180,7 +180,7 @@ export async function discoverCompetitors(app: string, category: string, limit =
   // (~43s). Either alone leaves Claude no time. Bound BOTH to a short budget and take
   // whatever seeds arrive in time; Claude adds the well-known competitors from its own
   // knowledge regardless (see the prompt), so empty seeds still yield a real analysis.
-  const SEED_BUDGET_MS = 10_000;
+  const SEED_BUDGET_MS = 6_000;
   const withTimeout = (p: Promise<CompetitorCandidate[]>): Promise<CompetitorCandidate[]> =>
     Promise.race([p.catch(() => []), new Promise<CompetitorCandidate[]>((res) => setTimeout(() => res([]), SEED_BUDGET_MS))]);
   const [fromPlay, fromDb] = await Promise.all([
@@ -275,7 +275,7 @@ Below are candidate apps discovered from the Google Play store and our internal 
 - Keep the candidates that are genuine competitors of ${app} in the "${category}" space.
 - Drop candidates that are off-target (wrong category, a tool/SDK, an obvious mismatch).
 - ADD the well-known direct competitors you know of that are missing from the list, do not limit yourself to the candidates.
-- Aim for the 5-8 most relevant competitors.
+- Aim for the 5 most relevant competitors. BE CONCISE so the report returns fast: positioning one short sentence; at most 2 pricing tiers; at most 4 features; at most 2 feature_icp_map entries per competitor; notes one short line.
 
 For EACH competitor return:
 - name, store_id (use the candidate's store_id if known, else ""), developer (else "")
@@ -356,11 +356,12 @@ export async function analyzeCompetitors(
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is not set, set it to run the competitive analysis.');
   }
-  // Sonnet, not Opus: this runs inside Vercel's 60s function cap, and Opus generating
-  // ~8-12k tokens over the competitor set reliably blows past it. Sonnet finishes the
-  // structured analysis in ~20s at equivalent quality. Override via COMPETE_MODEL only
-  // on a plan with a longer function timeout.
-  const model = process.env.COMPETE_MODEL ?? 'claude-sonnet-4-6';
+  // Haiku, for speed: the whole run shares Vercel's 60s function cap, and analysis is
+  // token-generation-bound — Opus/Sonnet generating thousands of structured-JSON tokens
+  // for the competitor set reliably blows past 60s. Haiku produces the same shape in
+  // ~25s. On a plan with a longer function timeout (Vercel Pro = 300s), set
+  // COMPETE_MODEL=claude-sonnet-4-6 (or opus) for richer analysis.
+  const model = process.env.COMPETE_MODEL ?? 'claude-haiku-4-5-20251001';
   const webSearch = ['1', 'true', 'yes'].includes((process.env.ANTHROPIC_WEB_SEARCH ?? '').toLowerCase());
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic();
@@ -370,7 +371,7 @@ export async function analyzeCompetitors(
   // the prompt (forced json_schema output is reserved for the no-tool path, where
   // there is no tool loop to interleave with). Without it we pin output_config so
   // the structure is guaranteed every run, the convention from jobs/analyze.ts.
-  const base: Record<string, unknown> = { model, max_tokens: 8_000 };
+  const base: Record<string, unknown> = { model, max_tokens: 5_000 };
   if (webSearch) {
     base.tools = [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }];
   } else {
