@@ -625,7 +625,7 @@ export async function buildDashboard() {
     <h2 style="margin:0;font-size:20px">B2B company tracker</h2>
     <span class="pill">admin only</span>
   </div>
-  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. Curated set for now; the live web and TechCrunch auto-sourcing pipeline lands next. Figures are approximate public estimates.</p>
+  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. <b>Build MVP</b> estimates how fast 8x could ship a credible MVP of the core wedge; the filter keeps only the ones buildable in a week max, the real plays. Curated set for now; the live web and TechCrunch auto-sourcing pipeline lands next. Figures are approximate public estimates.</p>
   <div id="b2b-body" class="panel dim">Sign in as an admin to view.</div>
 </section>
 
@@ -1064,6 +1064,11 @@ async function renderAdmin(){
   el.innerHTML = h;
 }
 
+let B2B_ALL = [];
+let b2bWeekOnly = true;
+// Buildability of a credible MVP of the core wedge. weekend/few_days/week count as
+// "buildable in a week max" (a real play); weeks/complex don't.
+const B2B_BUILD = { weekend:{label:'Weekend',wk:true}, few_days:{label:'Few days',wk:true}, week:{label:'~1 week',wk:true}, weeks:{label:'2-4 weeks',wk:false}, complex:{label:'1mo+',wk:false} };
 async function renderB2B(){
   const el = $('#b2b-body'); if (!el) return;
   if (!ME || ME.role !== 'admin') { el.className='panel dim'; el.textContent='Sign in as an admin to view.'; return; }
@@ -1071,20 +1076,29 @@ async function renderB2B(){
   const r = await api('/api/b2b');
   if (r.status === 401) { setMe(null); openLogin(); return; }
   if (!r.ok) { el.textContent = (r.data && r.data.error) || 'Failed to load.'; return; }
-  const cos = r.data.companies || [];
-  const heat = (s) => { const w = Math.max(0, Math.min(100, s|0)); return '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:64px;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+w+'%;background:var(--go)"></span></span><b style="font-family:var(--mono);font-size:12px">'+w+'</b></span>'; };
-  let h = '<p class="dim" style="margin:0 0 10px;font-size:12px">'+cos.length+' companies · sorted by traction signal</p>';
-  h += '<div style="overflow-x:auto"><table><thead><tr><th>Company</th><th>Category</th><th>Channel</th><th>Traction</th><th>Customers</th><th>Signal</th></tr></thead><tbody>';
-  h += cos.map(c =>
+  B2B_ALL = r.data.companies || [];
+  renderB2BTable();
+}
+function renderB2BTable(){
+  const el = $('#b2b-body'); if (!el) return;
+  const heat = (s) => { const w = Math.max(0, Math.min(100, s|0)); return '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:60px;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+w+'%;background:var(--go)"></span></span><b style="font-family:var(--mono);font-size:12px">'+w+'</b></span>'; };
+  const buildCell = (b) => { const m = B2B_BUILD[b] || {label:(b||'-'),wk:false}; const col = m.wk ? 'var(--go-dark)' : (b==='weeks' ? 'var(--amber)' : 'var(--faint)'); return '<span style="color:'+col+';font-weight:600;white-space:nowrap">'+(m.wk?'● ':'')+escq(m.label)+'</span>'; };
+  const list = b2bWeekOnly ? B2B_ALL.filter(c => (B2B_BUILD[c.build]||{}).wk) : B2B_ALL;
+  let h = '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 12px">'+
+    '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13.5px;font-weight:600"><input type="checkbox" id="b2b-week"'+(b2bWeekOnly?' checked':'')+'> Buildable in a week max</label>'+
+    '<span class="dim" style="font-size:12px">'+list.length+' of '+B2B_ALL.length+' companies · sorted by traction signal</span></div>';
+  h += '<div style="overflow-x:auto"><table><thead><tr><th>Company</th><th>Category</th><th>Build MVP</th><th>Channel</th><th>Traction</th><th>Signal</th></tr></thead><tbody>';
+  h += list.map(c =>
     '<tr><td><a href="'+escq(c.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600">'+escq(c.name)+'</a>'+(c.note?'<br><span class="dim" style="font-size:11.5px">'+escq(c.note)+'</span>':'')+'</td>'+
     '<td>'+escq(c.category)+'</td>'+
+    '<td>'+buildCell(c.build)+'</td>'+
     '<td><span class="pill">'+escq(c.channel)+'</span></td>'+
     '<td style="white-space:nowrap">'+escq(c.arr)+'</td>'+
-    '<td>'+escq(c.customers)+'</td>'+
     '<td>'+heat(c.signal)+'</td></tr>'
-  ).join('');
+  ).join('') || '<tr><td colspan="6" class="dim">No companies buildable in a week. Untick the filter to see all.</td></tr>';
   h += '</tbody></table></div>';
   el.innerHTML = h;
+  const cb = $('#b2b-week'); if (cb) cb.onchange = () => { b2bWeekOnly = cb.checked; renderB2BTable(); };
 }
 function escq(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
