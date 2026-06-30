@@ -625,7 +625,7 @@ export async function buildDashboard() {
     <h2 style="margin:0;font-size:20px">B2B company tracker</h2>
     <span class="pill">admin only</span>
   </div>
-  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. Seed list for now; the live web and TechCrunch sourcing pipeline lands next. Figures are approximate public estimates.</p>
+  <p class="muted-note" style="margin:0 0 12px">Fast-growing B2B software companies, sold to companies, often not on app stores (web, Slack, API), that 8x could help or replicate. Curated set for now; the live web and TechCrunch auto-sourcing pipeline lands next. Figures are approximate public estimates.</p>
   <div id="b2b-body" class="panel dim">Sign in as an admin to view.</div>
 </section>
 
@@ -1073,7 +1073,7 @@ async function renderB2B(){
   if (!r.ok) { el.textContent = (r.data && r.data.error) || 'Failed to load.'; return; }
   const cos = r.data.companies || [];
   const heat = (s) => { const w = Math.max(0, Math.min(100, s|0)); return '<span style="display:inline-flex;align-items:center;gap:7px"><span style="width:64px;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden;display:inline-block"><span style="display:block;height:100%;width:'+w+'%;background:var(--go)"></span></span><b style="font-family:var(--mono);font-size:12px">'+w+'</b></span>'; };
-  let h = '<p class="dim" style="margin:0 0 10px;font-size:12px">'+cos.length+' companies · sorted by traction signal · seed data</p>';
+  let h = '<p class="dim" style="margin:0 0 10px;font-size:12px">'+cos.length+' companies · sorted by traction signal</p>';
   h += '<div style="overflow-x:auto"><table><thead><tr><th>Company</th><th>Category</th><th>Channel</th><th>Traction</th><th>Customers</th><th>Signal</th></tr></thead><tbody>';
   h += cos.map(c =>
     '<tr><td><a href="'+escq(c.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600">'+escq(c.name)+'</a>'+(c.note?'<br><span class="dim" style="font-size:11.5px">'+escq(c.note)+'</span>':'')+'</td>'+
