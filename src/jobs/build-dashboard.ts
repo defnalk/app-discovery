@@ -617,6 +617,7 @@ export async function buildDashboard() {
       </div>
     </form>
     <div id="advisor-report" style="margin-top:16px"></div>
+    <div id="advisor-saved"></div>
   </div>
 </section>
 
@@ -1034,6 +1035,7 @@ function renderSubmitGate(){
 function renderAdvisorGate(){
   const gate = $('#advisor-gate'), form = $('#advisor-form'); if (!gate||!form) return;
   gate.style.display = ME ? 'none' : ''; form.style.display = ME ? '' : 'none';
+  if (ME) { advRestoreDraft(); advRenderSaved(); } else { const s=$('#advisor-saved'); if(s) s.innerHTML=''; }
 }
 function renderAdvisorReport(rep, grounded){
   const list = (arr, fn) => (arr&&arr.length) ? '<ul style="margin:4px 0 0;padding-left:18px">'+arr.map(fn).join('')+'</ul>' : '<span class="dim">none</span>';
@@ -1046,6 +1048,34 @@ function renderAdvisorReport(rep, grounded){
   h += sec('⚡ Quick wins', list(rep.quick_wins, w => '<li>'+escq(w)+'</li>'));
   if (grounded && grounded.length) h += '<p class="muted-note">Compared against tracked apps: '+grounded.map(escq).join(', ')+'</p>';
   $('#advisor-report').innerHTML = h;
+}
+// --- Advisor save (per-manager, localStorage): drafts + generated reports ---
+function advKey(kind){ return 'adv_'+kind+'_'+((ME&&ME.name)||'anon'); }
+function advFields(){ return { appName:($('#adv-name')||{}).value||'', category:($('#adv-cat')||{}).value||'', freeFeatures:($('#adv-free')||{}).value||'', paidFeatures:($('#adv-paid')||{}).value||'', competitors:($('#adv-comp')||{}).value||'', notes:($('#adv-notes')||{}).value||'' }; }
+function advSetFields(f){ if(!f) return; const set=(id,v)=>{ const el=$(id); if(el) el.value=v||''; }; set('#adv-name',f.appName); set('#adv-cat',f.category); set('#adv-free',f.freeFeatures); set('#adv-paid',f.paidFeatures); set('#adv-comp',f.competitors); set('#adv-notes',f.notes); }
+function advSaveDraft(){ try{ localStorage.setItem(advKey('draft'), JSON.stringify(advFields())); }catch(e){} }
+function advRestoreDraft(){ try{ const d=localStorage.getItem(advKey('draft')); if(d) advSetFields(JSON.parse(d)); }catch(e){} }
+function advGetReports(){ try{ return JSON.parse(localStorage.getItem(advKey('reports'))||'[]'); }catch(e){ return []; } }
+function advPutReports(list){ try{ localStorage.setItem(advKey('reports'), JSON.stringify(list.slice(0,25))); }catch(e){} }
+function advSaveReport(fields, report, grounded){
+  const list = advGetReports();
+  list.unshift({ id:'r'+Date.now(), appName:fields.appName||'(untitled)', category:fields.category||'', fields:fields, report:report, grounded:grounded||[], savedAt:new Date().toISOString() });
+  advPutReports(list); advRenderSaved();
+}
+function advDeleteReport(id){ advPutReports(advGetReports().filter(r=>r.id!==id)); advRenderSaved(); }
+function advLoadReport(id){ const r=advGetReports().find(x=>x.id===id); if(!r) return; advSetFields(r.fields); advSaveDraft(); renderAdvisorReport(r.report, r.grounded); if($('#adv-msg')) $('#adv-msg').textContent='Loaded saved report'; const rep=$('#advisor-report'); if(rep&&rep.scrollIntoView) rep.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+function advRenderSaved(){
+  const el=$('#advisor-saved'); if(!el) return;
+  const list=advGetReports();
+  if(!list.length){ el.innerHTML=''; return; }
+  el.innerHTML = '<div style="font-weight:600;margin:18px 0 8px">Saved reports ('+list.length+') <span class="dim" style="font-weight:400;font-size:12px">, saved on this browser</span></div>'+
+    list.map(r=>'<div class="panel" style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="flex:1"><b>'+escq(r.appName)+'</b>'+(r.category?' <span class="dim">, '+escq(r.category)+'</span>':'')+'<br><span class="dim" style="font-size:12px">'+escq((r.savedAt||'').slice(0,10))+'</span></div>'+
+      '<button class="ghost adv-open" data-id="'+escq(r.id)+'" style="font-size:12px">Open</button>'+
+      '<button class="ghost adv-del" data-id="'+escq(r.id)+'" style="font-size:12px">Delete</button>'+
+    '</div>').join('');
+  el.querySelectorAll('.adv-open').forEach(b=>b.onclick=()=>advLoadReport(b.dataset.id));
+  el.querySelectorAll('.adv-del').forEach(b=>b.onclick=()=>advDeleteReport(b.dataset.id));
 }
 async function renderAdmin(){
   const el = $('#admin-body'); if (!el) return;
@@ -1270,6 +1300,7 @@ const aform = $('#advisor-form');
 if (aform) aform.onsubmit = async (e) => {
   e.preventDefault();
   if (!ME) { openLogin(); return; }
+  const fields = advFields(); advSaveDraft();   // remember inputs so progress is never lost
   const go = $('#adv-go');
   go.disabled = true; $('#adv-msg').textContent = 'Analyzing… this takes ~20-30s';
   // Direct fetch with a long timeout, the shared api() helper aborts at 10s and
@@ -1287,9 +1318,12 @@ if (aform) aform.onsubmit = async (e) => {
   go.disabled = false;
   if (r.status === 401) { setMe(null); openLogin(); $('#adv-msg').textContent=''; return; }
   if (!r.ok) { $('#adv-msg').textContent = (r.data && r.data.error) || 'Failed'; return; }
-  $('#adv-msg').textContent = '✓ Report ready';
+  $('#adv-msg').textContent = '✓ Report ready, saved';
   renderAdvisorReport(r.data.report, r.data.grounded_on);
+  advSaveReport(fields, r.data.report, r.data.grounded_on);   // auto-save the result
 };
+// Auto-save the form draft as the manager types, so progress survives a reload.
+['adv-name','adv-cat','adv-free','adv-paid','adv-comp','adv-notes'].forEach(id => { const el = $('#'+id); if (el) el.addEventListener('input', advSaveDraft); });
 
 // Shareable hash routing: #/plays, #/admin … and deep links #/app/<id>
 function routeFromHash(){
