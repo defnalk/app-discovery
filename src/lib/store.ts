@@ -171,7 +171,16 @@ class SupabaseStore implements Store {
   private async paged<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
     const out: T[] = [];
     for (let from = 0; ; from += 1000) {
-      const page = await this.must<T[]>(query(from, from + 999));
+      // Retry each page: Supabase intermittently cancels a page with "statement
+      // timeout" under load, and one transient failure should not kill the build.
+      let page: T[] | undefined;
+      for (let attempt = 1; ; attempt++) {
+        try { page = await this.must<T[]>(query(from, from + 999)); break; }
+        catch (err) {
+          if (attempt >= 4) throw err;
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+      }
       out.push(...page);
       if (page.length < 1000) break;
     }

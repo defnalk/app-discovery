@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -1049,26 +1049,39 @@ function renderAdvisorReport(rep, grounded){
   if (grounded && grounded.length) h += '<p class="muted-note">Compared against tracked apps: '+grounded.map(escq).join(', ')+'</p>';
   $('#advisor-report').innerHTML = h;
 }
-// --- Advisor save (per-manager, localStorage): drafts + generated reports ---
+// --- Advisor save (per-manager): localStorage cache + cross-device sync via /api/advisor-reports ---
 function advKey(kind){ return 'adv_'+kind+'_'+((ME&&ME.name)||'anon'); }
 function advFields(){ return { appName:($('#adv-name')||{}).value||'', category:($('#adv-cat')||{}).value||'', freeFeatures:($('#adv-free')||{}).value||'', paidFeatures:($('#adv-paid')||{}).value||'', competitors:($('#adv-comp')||{}).value||'', notes:($('#adv-notes')||{}).value||'' }; }
 function advSetFields(f){ if(!f) return; const set=(id,v)=>{ const el=$(id); if(el) el.value=v||''; }; set('#adv-name',f.appName); set('#adv-cat',f.category); set('#adv-free',f.freeFeatures); set('#adv-paid',f.paidFeatures); set('#adv-comp',f.competitors); set('#adv-notes',f.notes); }
 function advSaveDraft(){ try{ localStorage.setItem(advKey('draft'), JSON.stringify(advFields())); }catch(e){} }
 function advRestoreDraft(){ try{ const d=localStorage.getItem(advKey('draft')); if(d) advSetFields(JSON.parse(d)); }catch(e){} }
 function advGetReports(){ try{ return JSON.parse(localStorage.getItem(advKey('reports'))||'[]'); }catch(e){ return []; } }
-function advPutReports(list){ try{ localStorage.setItem(advKey('reports'), JSON.stringify(list.slice(0,25))); }catch(e){} }
+function advPutReports(list){ try{ localStorage.setItem(advKey('reports'), JSON.stringify(list.slice(0,40))); }catch(e){} }
 function advSaveReport(fields, report, grounded){
-  const list = advGetReports();
-  list.unshift({ id:'r'+Date.now(), appName:fields.appName||'(untitled)', category:fields.category||'', fields:fields, report:report, grounded:grounded||[], savedAt:new Date().toISOString() });
-  advPutReports(list); advRenderSaved();
+  const entry = { id:'r'+Date.now(), appName:fields.appName||'(untitled)', category:fields.category||'', fields:fields, report:report, grounded:grounded||[], savedAt:new Date().toISOString() };
+  advPutReports([entry, ...advGetReports()]); advPaintSaved(advGetReports());
+  fetch('/api/advisor-reports',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(entry)}).catch(()=>{});
 }
-function advDeleteReport(id){ advPutReports(advGetReports().filter(r=>r.id!==id)); advRenderSaved(); }
+function advDeleteReport(id){
+  advPutReports(advGetReports().filter(r=>r.id!==id)); advPaintSaved(advGetReports());
+  fetch('/api/advisor-reports',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',id:id})}).catch(()=>{});
+}
 function advLoadReport(id){ const r=advGetReports().find(x=>x.id===id); if(!r) return; advSetFields(r.fields); advSaveDraft(); renderAdvisorReport(r.report, r.grounded); if($('#adv-msg')) $('#adv-msg').textContent='Loaded saved report'; const rep=$('#advisor-report'); if(rep&&rep.scrollIntoView) rep.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-function advRenderSaved(){
+async function advRenderSaved(){
+  advPaintSaved(advGetReports());   // instant from local cache
+  try {
+    const res = await fetch('/api/advisor-reports', { credentials:'include' });
+    if (!res.ok) return;
+    const srv = (await res.json()).reports || [];
+    const byId = {}; [...srv, ...advGetReports()].forEach(r=>{ if(r&&r.id && !byId[r.id]) byId[r.id]=r; });
+    const merged = Object.keys(byId).map(k=>byId[k]).sort((a,b)=>String(b.savedAt||'').localeCompare(String(a.savedAt||'')));
+    advPutReports(merged); advPaintSaved(merged);
+  } catch(e){}
+}
+function advPaintSaved(list){
   const el=$('#advisor-saved'); if(!el) return;
-  const list=advGetReports();
-  if(!list.length){ el.innerHTML=''; return; }
-  el.innerHTML = '<div style="font-weight:600;margin:18px 0 8px">Saved reports ('+list.length+') <span class="dim" style="font-weight:400;font-size:12px">, saved on this browser</span></div>'+
+  if(!list||!list.length){ el.innerHTML=''; return; }
+  el.innerHTML = '<div style="font-weight:600;margin:18px 0 8px">Saved reports ('+list.length+') <span class="dim" style="font-weight:400;font-size:12px">, synced to your account</span></div>'+
     list.map(r=>'<div class="panel" style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:8px">'+
       '<div style="flex:1"><b>'+escq(r.appName)+'</b>'+(r.category?' <span class="dim">, '+escq(r.category)+'</span>':'')+'<br><span class="dim" style="font-size:12px">'+escq((r.savedAt||'').slice(0,10))+'</span></div>'+
       '<button class="ghost adv-open" data-id="'+escq(r.id)+'" style="font-size:12px">Open</button>'+
