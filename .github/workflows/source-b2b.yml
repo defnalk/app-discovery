@@ -1,0 +1,49 @@
+name: source-b2b
+# Auto-source fresh fast-growing B2B companies into the admin B2B tracker.
+# Claude research (knowledge; set B2B_SOURCE_WEB=1 to enable web search) finds
+# net-new companies not already tracked, appends them to src/playapi/b2b-sourced.ts
+# (deduped against the curated base), commits, and redeploys. "Run every now and then."
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'How many new companies to find'
+        default: '12'
+  schedule:
+    - cron: '0 9 * * 1'   # Mondays 09:00 UTC
+
+concurrency: source-b2b
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Research net-new B2B companies
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          B2B_SOURCE_COUNT: ${{ github.event.inputs.count || '12' }}
+          B2B_SOURCE_WEB: '0'
+        run: node src/jobs/source-b2b.ts
+      - name: Commit + redeploy if the list changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet src/playapi/b2b-sourced.ts; then
+            echo "No net-new companies this run."; exit 0
+          fi
+          git config user.name "8x-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/playapi/b2b-sourced.ts
+          git commit -m "chore(b2b): auto-source new companies [skip ci]"
+          git push
+          gh workflow run deploy.yml --ref main || echo "deploy trigger skipped (will ship on next deploy)"

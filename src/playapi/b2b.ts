@@ -11,6 +11,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readSession, json } from './_lib.ts';
 import { B2B_COMPANIES } from './b2b-data.ts';
+import { SOURCED } from './b2b-sourced.ts';
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 export default async function handler(req: IncomingMessage & { method?: string }, res: ServerResponse) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method not allowed' });
@@ -20,6 +23,9 @@ export default async function handler(req: IncomingMessage & { method?: string }
   // (the role token is HMAC-signed, so it can't be forged client-side).
   if (!sess) return json(res, 401, { error: 'login required' });
   if (sess.role !== 'admin') return json(res, 403, { error: 'admins only' });
-  const companies = [...B2B_COMPANIES].sort((a, b) => b.signal - a.signal);
-  return json(res, 200, { companies, count: companies.length, source: 'curated' });
+  // Curated base + auto-sourced finds, deduped by name (curated wins).
+  const seen = new Set(B2B_COMPANIES.map((c) => norm(c.name)));
+  const merged = [...B2B_COMPANIES, ...SOURCED.filter((c) => c && c.name && !seen.has(norm(c.name)))];
+  const companies = merged.sort((a, b) => b.signal - a.signal);
+  return json(res, 200, { companies, count: companies.length, curated: B2B_COMPANIES.length, sourced: companies.length - B2B_COMPANIES.length });
 }
