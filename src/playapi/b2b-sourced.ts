@@ -188,5 +188,213 @@ export const SOURCED: SourcedCompany[] = [
     ],
     "sourced_at": "2026-07-01",
     "source": "auto"
+  },
+  {
+    "name": "Sourcegraph",
+    "category": "AI code search & agents",
+    "channel": "Web app / Desktop IDE",
+    "arr": "~$50M+ ARR, growing",
+    "customers": "Enterprise eng teams",
+    "signal": 78,
+    "build": "complex",
+    "url": "https://sourcegraph.com",
+    "note": "Enterprise-grade code intelligence pivoting hard into AI agents.",
+    "features": [
+      "Code search across repos",
+      "AI chat over codebase (Cody)",
+      "Batch code changes",
+      "Context-aware autocomplete"
+    ],
+    "wedge": "Not a week play: deep code indexing and multi-repo search infrastructure require serious backend work to be credible.",
+    "competitors": [
+      "GitHub Copilot",
+      "Cursor",
+      "Cody alternatives",
+      "Tabnine"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Sierra alternative: Crescendo",
+    "category": "AI customer support",
+    "channel": "Web app / API",
+    "arr": "Series-backed, fast",
+    "customers": "Mid-market support teams",
+    "signal": 68,
+    "build": "week",
+    "url": "https://www.crescendo.ai",
+    "note": "Blends AI + managed CX outsourcing with outcome pricing.",
+    "features": [
+      "AI resolution over knowledge base",
+      "Human escalation routing",
+      "Outcome-based pricing",
+      "Multi-channel deflection"
+    ],
+    "wedge": "Wire an LLM to a docs ingest + ticketing webhook to auto-answer common tickets with escalation fallback in a week.",
+    "competitors": [
+      "Intercom Fin",
+      "Ada",
+      "Decagon",
+      "Forethought"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Sardine alternative: Greptile",
+    "category": "AI code review",
+    "channel": "API / GitHub app",
+    "arr": "Seed/A, fast growth",
+    "customers": "Dev teams, YC startups",
+    "signal": 72,
+    "build": "week",
+    "url": "https://www.greptile.com",
+    "note": "Full-codebase-context AI reviews growing fast among startups.",
+    "features": [
+      "AI PR reviews with codebase context",
+      "Bug detection",
+      "Codebase Q&A API",
+      "Custom review rules"
+    ],
+    "wedge": "Build a GitHub app that indexes a repo and posts LLM review comments on PR diffs — credible MVP in a week.",
+    "competitors": [
+      "CodeRabbit",
+      "Graphite",
+      "Qodo",
+      "Ellipsis"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "CodeRabbit",
+    "category": "AI code review",
+    "channel": "GitHub/GitLab app",
+    "arr": "Series B (~$60M raised)",
+    "customers": "Eng teams, OSS projects",
+    "signal": 80,
+    "build": "week",
+    "url": "https://www.coderabbit.ai",
+    "note": "One of the fastest-growing AI code review tools by install base.",
+    "features": [
+      "Line-by-line PR reviews",
+      "Summary of changes",
+      "Chat on PRs",
+      "IDE extension"
+    ],
+    "wedge": "Ship a bot that summarizes diffs and flags issues on PRs via LLM in ~a week; polish and rules take longer.",
+    "competitors": [
+      "Greptile",
+      "Qodo",
+      "Graphite",
+      "Copilot review"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Baseten alternative: Fal",
+    "category": "Generative media inference",
+    "channel": "API",
+    "arr": "Series B/C, fast",
+    "customers": "AI app builders, media teams",
+    "signal": 82,
+    "build": "complex",
+    "url": "https://fal.ai",
+    "note": "Go-to inference layer for the generative image/video wave.",
+    "features": [
+      "Fast image/video model inference",
+      "Serverless GPU API",
+      "Model hosting",
+      "Workflow chaining"
+    ],
+    "wedge": "Not a week play: optimized GPU inference infra for diffusion/video models needs deep systems engineering.",
+    "competitors": [
+      "Replicate",
+      "Modal",
+      "Together AI",
+      "Runpod"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Fyxer",
+    "category": "AI email & meeting assistant",
+    "channel": "Web app / Email plugin",
+    "arr": "Seed, rapid ARR",
+    "customers": "SMBs, sales/ops teams",
+    "signal": 70,
+    "build": "week",
+    "url": "https://www.fyxer.com",
+    "note": "Fast-growing AI executive assistant for the inbox.",
+    "features": [
+      "AI email drafting in your voice",
+      "Inbox triage & labeling",
+      "Meeting notes",
+      "Follow-up automation"
+    ],
+    "wedge": "Connect Gmail API + LLM to auto-draft replies and categorize inbox in your tone — credible MVP in a week.",
+    "competitors": [
+      "Superhuman AI",
+      "Shortwave",
+      "Read AI",
+      "Fixer"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Legora",
+    "category": "AI legal workflow",
+    "channel": "Web app",
+    "arr": "Series B (~$80M raised)",
+    "customers": "Law firms, in-house legal",
+    "signal": 76,
+    "build": "complex",
+    "url": "https://legora.com",
+    "note": "European legal AI scaling fast against Harvey.",
+    "features": [
+      "Contract review & drafting",
+      "Multi-doc analysis",
+      "Tabular review",
+      "Citation-grounded answers"
+    ],
+    "wedge": "Not a week play: legal-grade accuracy, doc-parsing, and firm workflows need domain depth and trust to land.",
+    "competitors": [
+      "Harvey",
+      "Robin AI",
+      "Spellbook",
+      "Luminance"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
+  },
+  {
+    "name": "Cluely",
+    "category": "AI real-time assistant",
+    "channel": "Desktop app",
+    "arr": "Series A (~$15M+ raised)",
+    "customers": "Sales reps, individuals",
+    "signal": 74,
+    "build": "weeks",
+    "url": "https://cluely.com",
+    "note": "Viral 'undetectable' real-time AI assistant with big raise.",
+    "features": [
+      "Real-time screen/audio context",
+      "Live call suggestions",
+      "Invisible overlay",
+      "Meeting assist"
+    ],
+    "wedge": "Weeks to build: needs low-latency screen+audio capture, transcription, and an unobtrusive desktop overlay.",
+    "competitors": [
+      "Read AI",
+      "Otter",
+      "Granola",
+      "Attention"
+    ],
+    "sourced_at": "2026-07-01",
+    "source": "auto"
   }
 ];
