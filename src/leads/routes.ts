@@ -10,6 +10,8 @@ import { pageShell, esc, embedJson } from '../lib/html.ts';
 import { log } from '../lib/log.ts';
 import { getLeadsDb, FUNNEL_STAGES, type LeadJoined } from './db.ts';
 import { tierOf, DEFAULT_TIERS } from './jobs.ts';
+import { channelsFromLead } from './channels.ts';
+import { cpmDelta, opportunityScore } from './cpm-map.ts';
 import {
   instantlyEnabled, pushLead, listCampaigns, campaignAnalyticsByIds, dailyAnalytics,
   type InstantlyCampaign, type CampaignAnalytics, type DailyAnalytics,
@@ -1095,6 +1097,95 @@ async function strategyPage(_req: IncomingMessage, res: ServerResponse) {
   send(res, 200, pageShell({ title: 'Leads · Strategy', active: 'strategy', body: armTab + crossTab + doc }));
 }
 
+/**
+ * GET /leads/export — read-only JSON feed of the actionable lead book for external
+ * consumers (Bulut's dialer, Instantly). Token-gated by the entry layer (never Basic Auth).
+ * Defaults to consumer-app leads that HAVE a contact email (the actionable book); off-ICP
+ * and duplicates are excluded unless ?include=all. Filters:
+ *   ?status=clay_verified  ?geo=in  ?category=Education  ?arm=lookalike
+ *   ?since=2026-06-01       ?limit=500   ?all=1 (also include leads with no email)
+ *   ?dial_ready=1 (verified direct dials only)  ?email_ready=1 (deliverable emails only)
+ *   ?format=array          (bare array; default is a {count, generated_at, leads} object)
+ */
+async function leadsExport(_req: IncomingMessage, res: ServerResponse, url: URL) {
+  const db = getLeadsDb();
+  const [leadsAll, tiers] = await Promise.all([db.listLeadsJoined(), getTiers()]);
+  const q = url.searchParams;
+  const includeAll = ['all', '1'].includes(q.get('include') ?? '');
+  const wantAll = q.get('all') === '1'; // include leads without an email too
+  const status = (q.get('status') ?? '').toLowerCase();
+  const geo = (q.get('geo') ?? '').toLowerCase();
+  const category = (q.get('category') ?? '').toLowerCase();
+  const arm = (q.get('arm') ?? '').toLowerCase();
+  const since = q.get('since') ?? '';
+  const limit = Number(q.get('limit')) || 0;
+  // Channel routing: ?dial_ready=1 gives Bulut's dialer ONLY verified direct dials
+  // (no reception numbers); ?email_ready=1 gives Instantly ONLY deliverable emails.
+  const wantDial = q.get('dial_ready') === '1';
+  const wantEmailReady = q.get('email_ready') === '1';
+
+  let leads = leadsAll.filter((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    if (!includeAll && (rp.icp_type || rp.duplicate)) return false;
+    if (!(l.company || l.domain)) return false;
+    if (!wantAll && !wantDial && !l.email) return false; // a dial list doesn't need an email
+    if (status && (l.email_status ?? '').toLowerCase() !== status) return false;
+    if (geo && (l.geo ?? '').toLowerCase() !== geo) return false;
+    if (category && (l.category ?? '').toLowerCase() !== category) return false;
+    if (arm && l.source_arm.toLowerCase() !== arm) return false;
+    if (since && l.created_at < since) return false;
+    if (wantDial && !channelsFromLead(rp, l.email, l.email_status).dial_ready) return false;
+    if (wantEmailReady && !channelsFromLead(rp, l.email, l.email_status).email_ready) return false;
+    return true;
+  });
+  leads.sort((a, b) => Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
+  if (limit > 0) leads = leads.slice(0, limit);
+
+  const out = leads.map((l) => {
+    const rp = (l.raw_payload as Record<string, unknown> | null) ?? {};
+    const ch = channelsFromLead(rp, l.email, l.email_status);
+    return {
+      id: l.id,
+      company: l.company,
+      domain: l.domain,
+      contact_name: l.contact_name,
+      contact_title: l.contact_title,
+      email: l.email,
+      email_status: l.email_status,
+      contact_verified: (l.email_status ?? '').toLowerCase() === 'clay_verified',
+      // Per-channel routing verdicts (the verification gate). dial_ready = a direct
+      // line that isn't a switchboard; email_ready = a deliverable address.
+      email_verif: ch.email_verif,
+      email_ready: ch.email_ready,
+      phone_type: ch.phone_type,
+      phone_verif: ch.phone_verif,
+      dial_ready: ch.dial_ready,
+      routed_to: ch.routed_to,
+      phone: (rp.clay_phone as string | undefined) || (rp.phone as string | undefined) || null,
+      linkedin: (rp.clay_linkedin as string | undefined) || null,
+      geo: l.geo,
+      category: l.category,
+      source_arm: l.source_arm,
+      jaka_score: l.jaka_score,
+      tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy) so external consumers can rank by it too.
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
+      stage: l.stage,
+      created_at: l.created_at,
+      enriched_at: l.enriched_at,
+    };
+  });
+
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'cache-control': 'public, max-age=60',
+  });
+  if ((q.get('format') ?? '') === 'array') return void res.end(JSON.stringify(out));
+  res.end(JSON.stringify({ count: out.length, generated_at: new Date().toISOString(), leads: out }));
+}
+
 // ================================================================ registry
 export function registerRoutes(routes: Map<string, Handler>) {
   routes.set('GET /leads/strategy', strategyPage);
@@ -1108,5 +1199,6 @@ export function registerRoutes(routes: Map<string, Handler>) {
   routes.set('POST /leads/settings/resolve', resolveSuggestionAction);
   routes.set('POST /leads/clay', clayIngest); // Clay sends enriched contacts IN (token-gated by entry layer)
   routes.set('GET /leads/targets', targetsList); // Clay imports the target company list OUT (token-gated)
+  routes.set('GET /leads/export', leadsExport); // read-only JSON lead feed for external sites (Bulut) — token-gated by entry layer
   routes.set('POST /leads/update', leadUpdate); // inline CRM: rep sets disposition / favorite / note
 }
