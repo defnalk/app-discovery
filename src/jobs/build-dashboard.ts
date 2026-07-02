@@ -58,6 +58,18 @@ async function bundleFunctions() {
   }
 }
 
+/** Hard gate: never ship a page whose inline client script has a JS syntax error, it
+ *  would fail to parse and the whole dashboard would be stuck on "Loading". node:vm
+ *  compiles without executing, so this catches syntax errors (not runtime ones). */
+async function assertScriptsParse(html: string) {
+  const { Script } = await import('node:vm');
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  scripts.forEach((s, i) => {
+    try { new Script(s); }
+    catch (e) { throw new Error(`build gate: inline <script> #${i} has a JS syntax error, refusing to ship: ${(e as Error).message}`); }
+  });
+}
+
 /** Hard gate: never ship a build where a secret value leaked into the public bundle. */
 function assertNoSecretLeak() {
   const files = [path.join(process.cwd(), 'public', 'index.html')];
@@ -1103,7 +1115,7 @@ function advPaintSaved(list){
 // --- Growth teardowns: how fast-growing apps grew (curated from Social Growth Engineers) ---
 const TEARDOWNS = [
   { app:'Coconote', sub:'AI Note Taker', cat:'Productivity', dls:'500K/mo', users:'60K', channels:['TikTok','Student comms'], playbook:'Study/note content on TikTok aimed at students, timed to exam and cram season; the "AI turns your lecture into notes" hook drives installs.', url:'https://www.socialgrowthengineers.com/apps/coconote-ai-note-taker-6479320349' },
-  { app:'Tea Dating Advice', sub:'', cat:'Dating / Safety', dls:'400K/mo', users:'2M', rank:'#2', channels:['Virality','Women-only angle','TikTok'], playbook:'Women\'s dating-safety positioning plus controversy-driven virality and an invite/community feel that pushed it to a talked-about #2 app.', url:'https://www.socialgrowthengineers.com/apps/tea-dating-advice-6444453051' },
+  { app:'Tea Dating Advice', sub:'', cat:'Dating / Safety', dls:'400K/mo', users:'2M', rank:'#2', channels:['Virality','Women-first angle','TikTok'], playbook:'A women-first dating-safety angle plus controversy-driven virality and an invite/community feel that pushed it to a talked-about #2 app.', url:'https://www.socialgrowthengineers.com/apps/tea-dating-advice-6444453051' },
   { app:'Brainly', sub:'AI Homework Helper', cat:'Education / AI', dls:'300K/mo', users:'100K', rank:'#53', channels:['SEO','TikTok'], playbook:'A massive homework-question SEO footprint feeding installs, plus short-form homework-help clips with an "AI solves it" hook.', url:'https://www.socialgrowthengineers.com/apps/brainly-ai-homework-helper-745089947' },
   { app:'POV', sub:'Disposable Camera Events', cat:'Social / Events', dls:'100K/mo', users:'60K', rank:'#92', channels:['IRL events','Referral','Instagram'], playbook:'Event-driven loop: guests scan to join one shared disposable-camera roll, so every party or wedding seeds a batch of new users.', url:'https://www.socialgrowthengineers.com/apps/pov-disposable-camera-events-1636032890' },
   { app:'Autopilot', sub:'Investment App', cat:'Finance', dls:'1K/mo', users:'70K', rank:'#64', channels:['Copy-trading hook','Finance creators'], playbook:'An "invest like famous investors and politicians" copy-trading hook, amplified through finance-creator partnerships.', url:'https://www.socialgrowthengineers.com/apps/autopilot-investment-app-1613625799' },
@@ -1427,6 +1439,7 @@ loadState().then(refreshAll);`;
   if (rows.length < minRows || top100 < 50) {
     throw new Error(`build gate: ${rows.length} rows / ${top100} top-plays, refusing to ship a thin dashboard (set MIN_DASHBOARD_ROWS to override)`);
   }
+  await assertScriptsParse(html);  // abort if any inline <script> has a JS syntax error
   writeFileSync(out, html);
   await bundleFunctions();   // public/api/*.mjs (claim/login/admin endpoints)
   assertNoSecretLeak();      // abort if any secret value made it into the deployed bundle
