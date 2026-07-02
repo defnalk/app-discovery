@@ -162,7 +162,11 @@ class SupabaseStore implements Store {
   raw() { return this.sb; }
 
   private async must<T>(p: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T> {
-    const { data, error } = await p;
+    // Client-side timeout: Supabase occasionally leaves a query hanging (no response,
+    // no error), which would hang the whole build. Bound it so the paged() retry can
+    // reissue instead of waiting forever.
+    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('supabase query timed out (client-side 20s)')), 20000));
+    const { data, error } = (await Promise.race([p, timeout])) as { data: unknown; error: { message: string } | null };
     if (error) throw new Error(error.message);
     return data as T;
   }
