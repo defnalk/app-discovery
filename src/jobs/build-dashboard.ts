@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports', 'brief'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -875,7 +875,7 @@ function detailHtml(r) {
         '<p style="margin:4px 0"><b>Buildability: ' + escq(r.build||'-') + '</b>, ' + escq(r.build_note||'') + '</p>' +
         '<p style="margin:4px 0"><b>Saturation ' + (r.sat != null ? (r.sat * 100).toFixed(0) + '%' : '-') + '</b>, ' + escq(r.sat_note||'') + '</p>'
       ) : '<p class="dim">not analyzed yet, top-momentum apps are analyzed nightly</p>') +
-      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <a href="/compete?app=' + encodeURIComponent(r.name) + '&category=' + encodeURIComponent(r.category||'') + '" style="color:var(--acc)">🥊 Competitive landscape ↗</a> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p></div>' +
+      '<p style="margin:8px 0 0"><a href="' + escq(r.store_url) + '" target="_blank" style="color:var(--acc)">open store listing ↗</a> &nbsp; <a href="/compete?app=' + encodeURIComponent(r.name) + '&category=' + encodeURIComponent(r.category||'') + '" style="color:var(--acc)">🥊 Competitive landscape ↗</a> &nbsp; <button class="brief-btn" data-id="' + escq(r.id) + '" data-app="' + escq(r.name) + '" data-cat="' + escq(r.category||'') + '" style="font-size:12px">🛠 Build brief</button> &nbsp; <button class="ghost copy-link" data-id="' + escq(r.id) + '" style="font-size:12px">🔗 Copy link</button></p><div class="brief-box" id="brief-' + escq(r.id) + '"></div></div>' +
     gapsHtml(r) + '</div>';
 }
 // --- Play ops: claim widget, geo gaps, login, claim/start/release, submit, admin ---
@@ -935,6 +935,7 @@ function wireClaimButtons(scope){
     navigator.clipboard.writeText(location.origin + location.pathname + '#/app/' + encodeURIComponent(b.dataset.id))
       .then(() => toast('Link copied, share it', 'ok')).catch(() => toast('Copy failed', 'err'));
   });
+  scope.querySelectorAll('.brief-btn').forEach(b => b.onclick = (e) => { e.stopPropagation(); doBrief(b); });
   scope.querySelectorAll('.cw-timer').forEach(el => {
     const ms = new Date(el.dataset.by).getTime() - Date.now();
     if (ms <= 0) { el.textContent = '· ⚠ start time elapsed'; el.classList.add('cw-urgent'); return; }
@@ -1136,6 +1137,39 @@ const TEARDOWNS = [
   { app:'Astroscope', sub:'Astrology Guide', cat:'Lifestyle', dls:'9K/mo', users:'1K', channels:['Astrology content','Personalization'], playbook:'Personalized birth-chart and astrology short-form content plus a daily-horoscope retention loop.', url:'https://www.socialgrowthengineers.com/apps/astroscope-astrology-guide-1659088177' },
   { app:'Tik Wrapped', sub:'', cat:'Social', dls:'', channels:['TikTok trend','Shareable recap'], playbook:'A "your TikTok Wrapped" seasonal, shareable recap, a Spotify-Wrapped style viral share loop.', url:'https://www.socialgrowthengineers.com/apps/tik-wrapped-6477820489' },
 ];
+// --- Build Brief: one-click "should I build this + how" per play (via /api/brief) ---
+async function doBrief(btn){
+  if (!ME) { openLogin(); return; }
+  const id = btn.dataset.id, app = btn.dataset.app, cat = btn.dataset.cat || '';
+  const box = document.getElementById('brief-'+id); if (!box) return;
+  btn.disabled = true; box.innerHTML = '<p class="dim" style="margin:10px 0 0">Generating build brief, about 15 to 25s…</p>';
+  let r;
+  try {
+    const ctrl = new AbortController(); const timer = setTimeout(()=>ctrl.abort(), 70000);
+    const res = await fetch('/api/brief', { method:'POST', credentials:'include', headers:{'content-type':'application/json'}, body: JSON.stringify({ appName: app, category: cat }), signal: ctrl.signal });
+    clearTimeout(timer);
+    r = { ok: res.ok, status: res.status, data: await res.json().catch(()=>({})) };
+  } catch(e){ r = { ok:false, status:0, data:{ error:'timed out, try again' } }; }
+  btn.disabled = false;
+  if (r.status === 401) { setMe(null); openLogin(); box.innerHTML=''; return; }
+  if (!r.ok) { box.innerHTML = '<p style="margin:10px 0 0;color:var(--bad)">'+escq((r.data&&r.data.error)||'Failed to build brief')+'</p>'; return; }
+  renderBrief(box, r.data.brief);
+}
+function renderBrief(box, brief){
+  if (!brief) { box.innerHTML=''; return; }
+  const w = brief.mvp_wedge||{};
+  const chips = (arr)=> (arr||[]).map(x=>'<span class="pill">'+escq(x)+'</span>').join('');
+  const list = (arr, fn)=> (arr&&arr.length) ? '<ul style="margin:4px 0 0;padding-left:18px">'+arr.map(fn).join('')+'</ul>' : '<span class="dim">none</span>';
+  let h = '<div class="panel" style="margin-top:12px;border-left:3px solid var(--go)">';
+  h += '<div style="font-weight:700;margin-bottom:6px">🛠 Build brief</div>';
+  h += '<p style="margin:0 0 10px">'+escq(brief.summary||'')+'</p>';
+  h += '<div style="margin:0 0 10px"><b>MVP wedge</b> <span class="pill">'+escq(w.build_time||'')+'</span><br>'+escq(w.plan||'')+'<div style="margin-top:6px">'+chips(w.core_features)+'</div></div>';
+  h += '<div style="margin:0 0 10px"><b>Where to win</b>'+list(brief.competitive_gap, g=>'<li><b>'+escq(g.gap)+'</b>, <span class="dim">'+escq(g.why)+'</span></li>')+'</div>';
+  h += '<div style="margin:0 0 10px"><b>How it grows</b>'+list(brief.growth_motion, m=>'<li><b>'+escq(m.channel)+'</b>, <span class="dim">'+escq(m.tactic)+'</span></li>')+'</div>';
+  h += '<div><b>Risks</b>'+list(brief.risks, x=>'<li>'+escq(x)+'</li>')+'</div>';
+  h += '</div>';
+  box.innerHTML = h;
+}
 function renderTeardowns(){
   const el = $('#teardowns-body'); if(!el) return;
   el.innerHTML = TEARDOWNS.map(t =>
