@@ -487,6 +487,7 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
   <button class="tabbtn" data-tab="submit">📝 Submit a play</button>
   <button class="tabbtn" data-tab="advisor">🧭 Advisor</button>
+  <button class="tabbtn" data-tab="teardowns">📈 Teardowns</button>
   <button class="tabbtn" id="b2b-tab" data-tab="b2b" style="display:none">🏢 B2B</button>
   <button class="tabbtn" id="admin-tab" data-tab="admin" style="display:none">🛠 Admin</button>
   <a class="tablink" href="/compete">🥊 Competitive</a>
@@ -619,6 +620,15 @@ export async function buildDashboard() {
     <div id="advisor-report" style="margin-top:16px"></div>
     <div id="advisor-saved"></div>
   </div>
+</section>
+
+<section class="tabpane" id="tab-teardowns">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 4px">
+    <h2 style="margin:0;font-size:20px">Growth teardowns</h2>
+    <span class="dim" style="font-size:13px">how fast-growing apps actually grew</span>
+  </div>
+  <p class="muted-note" style="margin:0 0 12px">Plays tells you <b>what</b> is winning; these tell you <b>how</b>, the organic growth motion behind fast-growing consumer and AI apps. Curated from <a href="https://www.socialgrowthengineers.com/apps" target="_blank" rel="noopener" style="color:var(--acc)">Social Growth Engineers</a> teardowns; open the full teardown for the play-by-play.</p>
+  <div id="teardowns-body"></div>
 </section>
 
 <section class="tabpane" id="tab-b2b">
@@ -1090,6 +1100,32 @@ function advPaintSaved(list){
   el.querySelectorAll('.adv-open').forEach(b=>b.onclick=()=>advLoadReport(b.dataset.id));
   el.querySelectorAll('.adv-del').forEach(b=>b.onclick=()=>advDeleteReport(b.dataset.id));
 }
+// --- Growth teardowns: how fast-growing apps grew (curated from Social Growth Engineers) ---
+const TEARDOWNS = [
+  { app:'Coconote', sub:'AI Note Taker', cat:'Productivity', dls:'500K/mo', users:'60K', channels:['TikTok','Student comms'], playbook:'Study/note content on TikTok aimed at students, timed to exam and cram season; the "AI turns your lecture into notes" hook drives installs.', url:'https://www.socialgrowthengineers.com/apps/coconote-ai-note-taker-6479320349' },
+  { app:'Tea Dating Advice', sub:'', cat:'Dating / Safety', dls:'400K/mo', users:'2M', rank:'#2', channels:['Virality','Women-only angle','TikTok'], playbook:'Women\'s dating-safety positioning plus controversy-driven virality and an invite/community feel that pushed it to a talked-about #2 app.', url:'https://www.socialgrowthengineers.com/apps/tea-dating-advice-6444453051' },
+  { app:'Brainly', sub:'AI Homework Helper', cat:'Education / AI', dls:'300K/mo', users:'100K', rank:'#53', channels:['SEO','TikTok'], playbook:'A massive homework-question SEO footprint feeding installs, plus short-form homework-help clips with an "AI solves it" hook.', url:'https://www.socialgrowthengineers.com/apps/brainly-ai-homework-helper-745089947' },
+  { app:'POV', sub:'Disposable Camera Events', cat:'Social / Events', dls:'100K/mo', users:'60K', rank:'#92', channels:['IRL events','Referral','Instagram'], playbook:'Event-driven loop: guests scan to join one shared disposable-camera roll, so every party or wedding seeds a batch of new users.', url:'https://www.socialgrowthengineers.com/apps/pov-disposable-camera-events-1636032890' },
+  { app:'Autopilot', sub:'Investment App', cat:'Finance', dls:'1K/mo', users:'70K', rank:'#64', channels:['Copy-trading hook','Finance creators'], playbook:'An "invest like famous investors and politicians" copy-trading hook, amplified through finance-creator partnerships.', url:'https://www.socialgrowthengineers.com/apps/autopilot-investment-app-1613625799' },
+  { app:'Astroscope', sub:'Astrology Guide', cat:'Lifestyle', dls:'9K/mo', users:'1K', channels:['Astrology content','Personalization'], playbook:'Personalized birth-chart and astrology short-form content plus a daily-horoscope retention loop.', url:'https://www.socialgrowthengineers.com/apps/astroscope-astrology-guide-1659088177' },
+  { app:'Tik Wrapped', sub:'', cat:'Social', dls:'', channels:['TikTok trend','Shareable recap'], playbook:'A "your TikTok Wrapped" seasonal, shareable recap, a Spotify-Wrapped style viral share loop.', url:'https://www.socialgrowthengineers.com/apps/tik-wrapped-6477820489' },
+];
+function renderTeardowns(){
+  const el = $('#teardowns-body'); if(!el) return;
+  el.innerHTML = TEARDOWNS.map(t =>
+    '<div class="ccard" style="margin-bottom:12px">'+
+      '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">'+
+        '<h3 style="margin:0;font-size:16px">'+escq(t.app)+'</h3>'+
+        (t.sub?'<span class="dim">'+escq(t.sub)+'</span>':'')+
+        '<span class="pill">'+escq(t.cat)+'</span>'+
+        ((t.dls||t.rank||t.users)?'<span class="dim" style="font-size:12px">'+[t.dls,t.rank,t.users?t.users+' users':''].filter(Boolean).map(escq).join(' · ')+'</span>':'')+
+      '</div>'+
+      '<p style="margin:8px 0">'+escq(t.playbook)+'</p>'+
+      '<div style="margin-bottom:8px">'+(t.channels||[]).map(c=>'<span class="pill">'+escq(c)+'</span>').join('')+'</div>'+
+      '<a href="'+escq(t.url)+'" target="_blank" rel="noopener" style="color:var(--acc);font-size:13px">Read the full teardown ↗</a>'+
+    '</div>'
+  ).join('');
+}
 async function renderAdmin(){
   const el = $('#admin-body'); if (!el) return;
   if (!ME || ME.role !== 'admin') { el.className='panel dim'; el.textContent='Sign in as an admin to view.'; return; }
@@ -1202,6 +1238,7 @@ const CMDK_TABS = [
   { label:'Home', act:()=>showTab('home') }, { label:'Top Plays', act:()=>showTab('plays') },
   { label:'Idea Radar', act:()=>showTab('ideas') }, { label:'Charts', act:()=>showTab('charts') },
   { label:'Submit a play', act:()=>showTab('submit') }, { label:'Advisor', act:()=>showTab('advisor') },
+  { label:'Growth teardowns', act:()=>showTab('teardowns') },
   { label:'Competitive', act:()=>{ location.href='/compete'; } },
 ];
 let cmdkItems = [], cmdkSel = 0;
@@ -1275,6 +1312,7 @@ function showTab(t) {
   document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
   if (t === 'admin') renderAdmin();
+  if (t === 'teardowns') renderTeardowns();
   if (t === 'b2b') renderB2B();
   if (t === 'submit') renderSubmitGate();
   if (t === 'advisor') renderAdvisorGate();
