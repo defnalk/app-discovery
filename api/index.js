@@ -80,7 +80,7 @@ var init_log = __esm({
   }
 });
 
-// node_modules/tslib/tslib.es6.mjs
+// ../../../../../../../Users/defne/app-discovery/node_modules/tslib/tslib.es6.mjs
 var tslib_es6_exports = {};
 __export(tslib_es6_exports, {
   __addDisposableResource: () => __addDisposableResource,
@@ -519,7 +519,7 @@ function __rewriteRelativeImportExtension(path4, preserveJsx) {
 }
 var extendStatics, __assign, __createBinding, __setModuleDefault, ownKeys, _SuppressedError, tslib_es6_default;
 var init_tslib_es6 = __esm({
-  "node_modules/tslib/tslib.es6.mjs"() {
+  "../../../../../../../Users/defne/app-discovery/node_modules/tslib/tslib.es6.mjs"() {
     extendStatics = function(d, b) {
       extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
         d2.__proto__ = b2;
@@ -605,9 +605,9 @@ var init_tslib_es6 = __esm({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/helper.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/helper.js
 var require_helper = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/helper.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.resolveFetch = void 0;
@@ -621,9 +621,9 @@ var require_helper = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/types.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/types.js
 var require_types = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsHttpError = exports.FunctionsRelayError = exports.FunctionsFetchError = exports.FunctionsError = void 0;
@@ -681,9 +681,9 @@ var require_types = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js
 var require_FunctionsClient = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/FunctionsClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionsClient = void 0;
@@ -959,9 +959,9 @@ var require_FunctionsClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/functions-js/dist/main/index.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/index.js
 var require_main = __commonJS({
-  "node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FunctionRegion = exports.FunctionsRelayError = exports.FunctionsHttpError = exports.FunctionsFetchError = exports.FunctionsError = exports.FunctionsClient = void 0;
@@ -988,7 +988,7 @@ var require_main = __commonJS({
   }
 });
 
-// node_modules/@supabase/postgrest-js/dist/index.mjs
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/postgrest-js/dist/index.mjs
 function sleep(ms, signal) {
   return new Promise((resolve) => {
     if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
@@ -1065,7 +1065,7 @@ function _objectSpread2(e) {
 }
 var DEFAULT_MAX_RETRIES, getRetryDelay, RETRYABLE_STATUS_CODES, RETRYABLE_METHODS, PostgrestError, PostgrestBuilder, PostgrestTransformBuilder, PostgrestReservedCharsRegexp, PostgrestFilterBuilder, PostgrestQueryBuilder, PostgrestClient;
 var init_dist = __esm({
-  "node_modules/@supabase/postgrest-js/dist/index.mjs"() {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/postgrest-js/dist/index.mjs"() {
     DEFAULT_MAX_RETRIES = 3;
     getRetryDelay = (attemptIndex) => Math.min(1e3 * 2 ** attemptIndex, 3e4);
     RETRYABLE_STATUS_CODES = [520, 503];
@@ -6051,9 +6051,9 @@ ${cause.stack}`;
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
 var require_websocket_factory = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = void 0;
@@ -6174,9 +6174,9 @@ Suggested solution: ${env.workaround}`;
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/version.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/version.js
 var require_version = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -6184,9 +6184,9 @@ var require_version = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/constants.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.CONNECTION_STATE = exports.TRANSPORTS = exports.CHANNEL_EVENTS = exports.CHANNEL_STATES = exports.SOCKET_STATES = exports.MAX_PUSH_BUFFER_SIZE = exports.WS_CLOSE_NORMAL = exports.DEFAULT_TIMEOUT = exports.VERSION = exports.DEFAULT_VSN = exports.VSN_2_0_0 = exports.VSN_1_0_0 = exports.DEFAULT_VERSION = void 0;
@@ -6232,9 +6232,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js
 var require_serializer = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/serializer.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Serializer = class {
@@ -6379,9 +6379,9 @@ var require_serializer = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js
 var require_transformers = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/transformers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.httpEndpointURL = exports.toTimestampString = exports.toArray = exports.toJson = exports.toNumber = exports.toBoolean = exports.convertCell = exports.convertColumn = exports.convertChangeData = exports.PostgresTypes = void 0;
@@ -6558,9 +6558,9 @@ var require_transformers = __commonJS({
   }
 });
 
-// node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js
 var require_phoenix_cjs = __commonJS({
-  "node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/phoenix/priv/static/phoenix.cjs.js"(exports, module) {
     "use strict";
     var __defProp2 = Object.defineProperty;
     var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
@@ -8366,9 +8366,9 @@ var require_phoenix_cjs = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js
 var require_presenceAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/presenceAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -8464,9 +8464,9 @@ var require_presenceAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js
 var require_RealtimePresence = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimePresence.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_PRESENCE_LISTEN_EVENTS = void 0;
@@ -8508,9 +8508,9 @@ var require_RealtimePresence = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js
 var require_normalizeChannelError = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/lib/normalizeChannelError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.normalizeChannelError = normalizeChannelError;
@@ -8534,9 +8534,9 @@ var require_normalizeChannelError = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js
 var require_channelAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/channelAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var constants_1 = require_constants();
@@ -8641,9 +8641,9 @@ var require_channelAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js
 var require_RealtimeChannel = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimeChannel.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_LISTEN_TYPES = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = void 0;
@@ -9352,9 +9352,9 @@ var require_RealtimeChannel = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js
 var require_socketAdapter = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/phoenix/socketAdapter.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var phoenix_1 = require_phoenix_cjs();
@@ -9470,9 +9470,9 @@ var require_socketAdapter = __commonJS({
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js
 var require_RealtimeClient = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/RealtimeClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -10139,9 +10139,9 @@ Option 2: Install and provide the "ws" package:
   }
 });
 
-// node_modules/@supabase/realtime-js/dist/main/index.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/index.js
 var require_main2 = __commonJS({
-  "node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebSocketFactory = exports.REALTIME_CHANNEL_STATES = exports.REALTIME_SUBSCRIBE_STATES = exports.REALTIME_PRESENCE_LISTEN_EVENTS = exports.REALTIME_POSTGRES_CHANGES_LISTEN_EVENT = exports.REALTIME_LISTEN_TYPES = exports.RealtimeClient = exports.RealtimeChannel = exports.RealtimePresence = void 0;
@@ -10172,7 +10172,7 @@ var require_main2 = __commonJS({
   }
 });
 
-// node_modules/iceberg-js/dist/index.mjs
+// ../../../../../../../Users/defne/app-discovery/node_modules/iceberg-js/dist/index.mjs
 function buildUrl(baseUrl, path4, query) {
   const url = new URL(path4, baseUrl);
   if (query) {
@@ -10248,7 +10248,7 @@ function namespaceToPath2(namespace) {
 }
 var IcebergError, NamespaceOperations, TableOperations, IcebergRestCatalog;
 var init_dist2 = __esm({
-  "node_modules/iceberg-js/dist/index.mjs"() {
+  "../../../../../../../Users/defne/app-discovery/node_modules/iceberg-js/dist/index.mjs"() {
     IcebergError = class extends Error {
       constructor(message, opts) {
         super(message);
@@ -10710,7 +10710,7 @@ var init_dist2 = __esm({
   }
 });
 
-// node_modules/@supabase/storage-js/dist/index.mjs
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/storage-js/dist/index.mjs
 function _typeof2(o) {
   "@babel/helpers - typeof";
   return _typeof2 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
@@ -10812,7 +10812,7 @@ function createFetchApi(namespace = "storage") {
 }
 var StorageError, StorageApiError, StorageUnknownError, resolveFetch, isPlainObject, recursiveToCamel, isValidBucketName, _getErrorMessage, handleError, _getRequestParams, defaultApi, get, post, put, head, remove, vectorsApi, BaseApiClient, _Symbol$toStringTag$1, StreamDownloadBuilder, _Symbol$toStringTag, BlobDownloadBuilder, DEFAULT_SEARCH_OPTIONS, DEFAULT_FILE_OPTIONS, StorageFileApi, version, DEFAULT_HEADERS, StorageBucketApi, StorageAnalyticsClient, VectorIndexApi, VectorDataApi, VectorBucketApi, StorageVectorsClient, VectorBucketScope, VectorIndexScope, StorageClient;
 var init_dist3 = __esm({
-  "node_modules/@supabase/storage-js/dist/index.mjs"() {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/storage-js/dist/index.mjs"() {
     init_dist2();
     StorageError = class extends Error {
       constructor(message, namespace = "storage", status, statusCode) {
@@ -13406,9 +13406,9 @@ var init_dist3 = __esm({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/version.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/version.js
 var require_version2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/version.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.version = void 0;
@@ -13416,9 +13416,9 @@ var require_version2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/constants.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/constants.js
 var require_constants2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/constants.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.JWKS_TTL = exports.BASE64URL_REGEX = exports.API_VERSIONS = exports.API_VERSION_HEADER_NAME = exports.NETWORK_FAILURE = exports.DEFAULT_HEADERS = exports.AUDIENCE = exports.STORAGE_KEY = exports.GOTRUE_URL = exports.EXPIRY_MARGIN_MS = exports.AUTO_REFRESH_TICK_THRESHOLD = exports.AUTO_REFRESH_TICK_DURATION_MS = void 0;
@@ -13447,9 +13447,9 @@ var require_constants2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/errors.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/errors.js
 var require_errors = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.AuthInvalidJwtError = exports.AuthWeakPasswordError = exports.AuthRefreshDiscardedError = exports.AuthRetryableFetchError = exports.AuthPKCECodeVerifierMissingError = exports.AuthPKCEGrantCodeExchangeError = exports.AuthImplicitGrantRedirectError = exports.AuthInvalidCredentialsError = exports.AuthInvalidTokenResponseError = exports.AuthSessionMissingError = exports.CustomAuthError = exports.AuthUnknownError = exports.AuthApiError = exports.AuthError = void 0;
@@ -13605,9 +13605,9 @@ var require_errors = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/base64url.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/base64url.js
 var require_base64url = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/base64url.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.byteToBase64URL = byteToBase64URL;
@@ -13669,19 +13669,19 @@ var require_base64url = __commonJS({
         throw new Error(`Invalid Base64-URL character "${String.fromCharCode(charCode)}"`);
       }
     }
-    function stringToBase64URL(str) {
+    function stringToBase64URL(str2) {
       const base64 = [];
       const emitter = (char) => {
         base64.push(char);
       };
       const state = { queue: 0, queuedBits: 0 };
-      stringToUTF8(str, (byte) => {
+      stringToUTF8(str2, (byte) => {
         byteToBase64URL(byte, state, emitter);
       });
       byteToBase64URL(null, state, emitter);
       return base64.join("");
     }
-    function stringFromBase64URL(str) {
+    function stringFromBase64URL(str2) {
       const conv = [];
       const utf8Emit = (codepoint) => {
         conv.push(String.fromCodePoint(codepoint));
@@ -13694,8 +13694,8 @@ var require_base64url = __commonJS({
       const byteEmit = (byte) => {
         stringFromUTF8(byte, utf8State, utf8Emit);
       };
-      for (let i = 0; i < str.length; i += 1) {
-        byteFromBase64URL(str.charCodeAt(i), b64State, byteEmit);
+      for (let i = 0; i < str2.length; i += 1) {
+        byteFromBase64URL(str2.charCodeAt(i), b64State, byteEmit);
       }
       return conv.join("");
     }
@@ -13721,12 +13721,12 @@ var require_base64url = __commonJS({
       }
       throw new Error(`Unrecognized Unicode codepoint: ${codepoint.toString(16)}`);
     }
-    function stringToUTF8(str, emit2) {
-      for (let i = 0; i < str.length; i += 1) {
-        let codepoint = str.charCodeAt(i);
+    function stringToUTF8(str2, emit2) {
+      for (let i = 0; i < str2.length; i += 1) {
+        let codepoint = str2.charCodeAt(i);
         if (codepoint > 55295 && codepoint <= 56319) {
           const highSurrogate = (codepoint - 55296) * 1024 & 65535;
-          const lowSurrogate = str.charCodeAt(i + 1) - 56320 & 65535;
+          const lowSurrogate = str2.charCodeAt(i + 1) - 56320 & 65535;
           codepoint = (lowSurrogate | highSurrogate) + 65536;
           i += 1;
         }
@@ -13766,20 +13766,20 @@ var require_base64url = __commonJS({
         }
       }
     }
-    function base64UrlToUint8Array(str) {
+    function base64UrlToUint8Array(str2) {
       const result = [];
       const state = { queue: 0, queuedBits: 0 };
       const onByte = (byte) => {
         result.push(byte);
       };
-      for (let i = 0; i < str.length; i += 1) {
-        byteFromBase64URL(str.charCodeAt(i), state, onByte);
+      for (let i = 0; i < str2.length; i += 1) {
+        byteFromBase64URL(str2.charCodeAt(i), state, onByte);
       }
       return new Uint8Array(result);
     }
-    function stringToUint8Array(str) {
+    function stringToUint8Array(str2) {
       const result = [];
-      stringToUTF8(str, (byte) => result.push(byte));
+      stringToUTF8(str2, (byte) => result.push(byte));
       return new Uint8Array(result);
     }
     function bytesToBase64URL(bytes) {
@@ -13795,9 +13795,9 @@ var require_base64url = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/helpers.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/helpers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.Deferred = exports.removeItemAsync = exports.getItemAsync = exports.setItemAsync = exports.looksLikeFetchResponse = exports.resolveFetch = exports.supportsLocalStorage = exports.isBrowser = void 0;
@@ -14058,8 +14058,8 @@ var require_helpers = __commonJS({
       }
     }
     var UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-    function validateUUID(str) {
-      if (!UUID_REGEX.test(str)) {
+    function validateUUID(str2) {
+      if (!UUID_REGEX.test(str2)) {
         throw new Error("@supabase/auth-js: Expected parameter to be UUID but is not");
       }
     }
@@ -14117,9 +14117,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/fetch.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/fetch.js
 var require_fetch = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/fetch.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.handleError = handleError2;
@@ -14285,9 +14285,9 @@ var require_fetch = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/types.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/types.js
 var require_types2 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/types.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SIGN_OUT_SCOPES = void 0;
@@ -14295,9 +14295,9 @@ var require_types2 = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js
 var require_GoTrueAdminApi = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/GoTrueAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -15384,9 +15384,9 @@ var require_GoTrueAdminApi = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js
 var require_local_storage = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/local-storage.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.memoryLocalStorageAdapter = memoryLocalStorageAdapter;
@@ -15406,9 +15406,9 @@ var require_local_storage = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/locks.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/locks.js
 var require_locks = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/locks.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.ProcessLockAcquireTimeoutError = exports.NavigatorLockAcquireTimeoutError = exports.LockAcquireTimeoutError = exports.internals = void 0;
@@ -15584,9 +15584,9 @@ var require_locks = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js
 var require_polyfills = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/polyfills.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.polyfillGlobalThis = polyfillGlobalThis;
@@ -15611,9 +15611,9 @@ var require_polyfills = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js
 var require_ethereum = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/web3/ethereum.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getAddress = getAddress;
@@ -15689,9 +15689,9 @@ ${suffix}`;
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js
 var require_webauthn_errors = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/webauthn.errors.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnUnknownError = exports.WebAuthnError = void 0;
@@ -15880,9 +15880,9 @@ var require_webauthn_errors = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js
 var require_webauthn = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/lib/webauthn.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.WebAuthnApi = exports.DEFAULT_REQUEST_OPTIONS = exports.DEFAULT_CREATION_OPTIONS = exports.webAuthnAbortService = exports.WebAuthnAbortService = exports.identifyAuthenticationError = exports.identifyRegistrationError = exports.isWebAuthnError = exports.WebAuthnError = void 0;
@@ -16439,9 +16439,9 @@ var require_webauthn = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js
 var require_GoTrueClient = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/GoTrueClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -21533,9 +21533,9 @@ var require_GoTrueClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js
 var require_AuthAdminApi = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/AuthAdminApi.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -21545,9 +21545,9 @@ var require_AuthAdminApi = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/AuthClient.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/AuthClient.js
 var require_AuthClient = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/AuthClient.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var tslib_1 = (init_tslib_es6(), __toCommonJS(tslib_es6_exports));
@@ -21557,9 +21557,9 @@ var require_AuthClient = __commonJS({
   }
 });
 
-// node_modules/@supabase/auth-js/dist/main/index.js
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/index.js
 var require_main3 = __commonJS({
-  "node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.processLock = exports.lockInternals = exports.NavigatorLockAcquireTimeoutError = exports.navigatorLock = exports.AuthClient = exports.AuthAdminApi = exports.GoTrueClient = exports.GoTrueAdminApi = void 0;
@@ -21590,7 +21590,7 @@ var require_main3 = __commonJS({
   }
 });
 
-// node_modules/@supabase/supabase-js/dist/index.mjs
+// ../../../../../../../Users/defne/app-discovery/node_modules/@supabase/supabase-js/dist/index.mjs
 var dist_exports = {};
 __export(dist_exports, {
   FunctionRegion: () => import_functions_js.FunctionRegion,
@@ -21829,7 +21829,7 @@ function shouldShowDeprecationWarning() {
 }
 var import_functions_js, import_realtime_js, import_auth_js, version2, JS_ENV, JS_RUNTIME_VERSION, _Deno$version, _process$version, _runtimeMeta, DEFAULT_HEADERS2, DEFAULT_GLOBAL_OPTIONS, DEFAULT_DB_OPTIONS, DEFAULT_AUTH_OPTIONS, DEFAULT_REALTIME_OPTIONS, DEFAULT_TRACE_PROPAGATION_OPTIONS, otelModulePromise, OTEL_PKG, resolveFetch2, resolveHeadersConstructor, fetchWithAuth, SupabaseAuthClient, SupabaseClient, createClient;
 var init_dist4 = __esm({
-  "node_modules/@supabase/supabase-js/dist/index.mjs"() {
+  "../../../../../../../Users/defne/app-discovery/node_modules/@supabase/supabase-js/dist/index.mjs"() {
     import_functions_js = __toESM(require_main(), 1);
     init_dist();
     import_realtime_js = __toESM(require_main2(), 1);
@@ -22909,36 +22909,24 @@ var init_store = __esm({
         for (const batch of chunks(rows)) {
           const keys = batch.map((r) => r.store_id);
           const existing = await this.must(
-            this.sb.from("apps").select("id, store_id, store").in("store_id", keys)
+            this.sb.from("apps").select("id, store_id, store, first_seen_at, status").in("store_id", keys)
           );
-          const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e.id]));
-          const inserts = [];
-          for (const r of batch) {
-            const k = `${r.store}:${r.store_id}`;
-            if (have.has(k)) ids.set(k, have.get(k));
-            else inserts.push({ ...r, first_seen_at: now, last_seen_at: now });
-          }
-          if (inserts.length) {
-            const created = await this.must(
-              this.sb.from("apps").upsert(inserts, { onConflict: "store_id,store" }).select("id, store_id, store")
-            );
-            for (const c of created) ids.set(`${c.store}:${c.store_id}`, c.id);
-          }
-          for (const r of batch) {
-            const k = `${r.store}:${r.store_id}`;
-            if (have.has(k)) {
-              await this.must(
-                this.sb.from("apps").update({
-                  name: r.name,
-                  developer_name: r.developer_name,
-                  developer_domain: r.developer_domain,
-                  category: r.category,
-                  description: r.description,
-                  last_seen_at: now
-                }).eq("id", have.get(k))
-              );
-            }
-          }
+          const have = new Map(existing.map((e) => [`${e.store}:${e.store_id}`, e]));
+          const payload = batch.map((r) => {
+            const ex = have.get(`${r.store}:${r.store_id}`);
+            return {
+              ...r,
+              first_seen_at: ex?.first_seen_at ?? now,
+              // preserve original on update
+              last_seen_at: now,
+              status: ex?.status ?? "active"
+              // don't clobber too_complex etc.
+            };
+          });
+          const upserted = await this.must(
+            this.sb.from("apps").upsert(payload, { onConflict: "store_id,store" }).select("id, store_id, store")
+          );
+          for (const c of upserted) ids.set(`${c.store}:${c.store_id}`, c.id);
         }
         return ids;
       }
@@ -23479,7 +23467,7 @@ var embedJson = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 function pageShell(opts) {
   const app = opts.app ?? (opts.active === "apps" ? "apps" : "leads");
   const tabs = app === "apps" ? NAV.filter((n) => n.key === "apps") : NAV.filter((n) => n.key !== "apps");
-  const brand = app === "apps" ? "Play Database" : "8x leads";
+  const brand = app === "apps" ? "Plays Database" : "8x leads";
   const tab = (n) => `<a href="${n.href}" class="tab${opts.active === n.key ? " active" : ""}">${n.label}</a>`;
   return `<!doctype html>
 <html lang="en"><head>
@@ -23487,45 +23475,73 @@ function pageShell(opts) {
 <meta name="robots" content="noindex">
 <title>${esc(opts.title)}</title>
 <style>
-  :root { --bg:#0e1116; --panel:#161b24; --line:#252c3a; --txt:#dbe2ee; --dim:#8694ab; --acc:#4da3ff; --good:#3fcf8e; --warn:#ffb347; --bad:#ff6b6b; }
+  /* \u2500\u2500 Design system v1 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+  :root {
+    --bg:#0c0f14; --bg-elev:#11151c; --panel:#161b24; --panel-2:#1b212c;
+    --line:#262d3b; --line-2:#313a4c;
+    --txt:#e7ecf4; --txt-2:#aab6c8; --dim:#909cb0;
+    --acc:#4da3ff; --acc-2:#76b8ff; --acc-ink:#06121f;
+    --good:#3fcf8e; --good-bg:#0f2e20; --warn:#ffb347; --warn-bg:#352711; --bad:#ff6b6b; --bad-bg:#3a1414;
+    --r-sm:6px; --r:9px; --r-lg:13px; --r-full:999px;
+    --shadow:0 1px 0 rgba(0,0,0,.05), 0 14px 30px -20px rgba(0,0,0,.6);
+    --ring:0 0 0 3px rgba(77,163,255,.35);
+    --ease:cubic-bezier(.4,0,.2,1);
+    --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,'SF Mono','JetBrains Mono',Menlo,monospace;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif; }
-  header { display:flex; align-items:center; gap:18px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap; }
-  header h1 { font-size:16px; margin:0 14px 0 0; white-space:nowrap; line-height:1; }
-  .navgroup { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
-  .tab { color:var(--dim); text-decoration:none; padding:5px 10px; border-radius:6px; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:var(--font); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  h1,h2,h3,h4 { letter-spacing:-.012em; }
+  a { color:var(--acc); text-decoration:none; transition:color .15s var(--ease); } a:hover { color:var(--acc-2); }
+  ::selection { background:rgba(77,163,255,.28); }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible, summary:focus-visible { outline:none; box-shadow:var(--ring); border-radius:var(--r-sm); }
+  header { display:flex; align-items:center; gap:18px; padding:13px 22px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--panel),var(--bg-elev)); flex-wrap:wrap; }
+  header h1 { font-size:17px; font-weight:700; margin:0 14px 0 0; white-space:nowrap; line-height:1; letter-spacing:-.02em; }
+  .navgroup { display:flex; gap:2px; align-items:center; flex-wrap:wrap; }
+  .tab { color:var(--dim); text-decoration:none; padding:6px 11px; border-radius:var(--r-sm); font-weight:600; font-size:13.5px; transition:background .15s var(--ease),color .15s var(--ease); }
   .tab.active { color:var(--txt); background:var(--line); }
-  .tab:hover { color:var(--txt); }
-  main { padding:18px 20px; max-width:1500px; margin:0 auto; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:16px; }
+  .tab:hover { color:var(--txt); background:rgba(255,255,255,.04); }
+  main { padding:22px 22px 56px; max-width:1500px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--r-lg); padding:16px; margin-bottom:16px; box-shadow:var(--shadow); }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; }
-  th.sorth:hover { color:var(--acc); }
-  tr:hover td { background:#1a2130; }
-  input[type=text], input[type=search], select, input[type=number], input[type=date] {
-    background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px; }
+  th, td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--dim); font-weight:600; cursor:pointer; user-select:none; white-space:nowrap; position:sticky; top:0; background:var(--panel); z-index:2; letter-spacing:.01em; }
+  th.sorth:hover, th:hover { color:var(--acc); }
+  tbody tr { transition:background .12s var(--ease); }
+  tr:hover td { background:rgba(255,255,255,.028); }
+  input[type=text], input[type=search], select, input[type=number], input[type=date], textarea {
+    background:var(--bg-elev); color:var(--txt); border:1px solid var(--line-2); border-radius:var(--r-sm); padding:7px 10px; font-size:13px; font-family:inherit; transition:border-color .15s var(--ease),box-shadow .15s var(--ease); }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--acc); box-shadow:var(--ring); }
+  ::placeholder { color:var(--dim); opacity:.85; }
   .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .filters label { color:var(--dim); font-size:12px; display:flex; gap:6px; align-items:center; }
-  .pill { display:inline-block; padding:1px 7px; border-radius:99px; font-size:11px; background:var(--line); color:var(--txt); margin:0 3px 2px 0; }
-  .pill.gap { background:#3b2a14; color:var(--warn); }
-  .pill.new { background:#10301f; color:var(--good); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:var(--r-full); font-size:11px; font-weight:500; background:var(--line); color:var(--txt-2); margin:0 3px 2px 0; }
+  .pill.gap { background:var(--warn-bg); color:var(--warn); }
+  .pill.new { background:var(--good-bg); color:var(--good); }
   .flag { color:var(--bad); font-weight:700; }
   .dim { color:var(--dim); }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
-  .stat { display:inline-flex; flex-direction:column; padding:10px 16px; border:1px solid var(--line); border-radius:10px; margin:0 8px 8px 0; min-width:110px; cursor:pointer; background:var(--panel); }
-  .stat b { font-size:20px; }
+  .stat { display:inline-flex; flex-direction:column; padding:10px 16px; border:1px solid var(--line); border-radius:var(--r); margin:0 8px 8px 0; min-width:110px; cursor:pointer; background:var(--panel); transition:border-color .15s var(--ease),transform .12s var(--ease); }
+  .stat:hover { border-color:var(--line-2); transform:translateY(-1px); }
+  .stat b { font-size:20px; font-weight:700; }
   .stat span { color:var(--dim); font-size:11px; }
   .stat.active { border-color:var(--acc); }
-  button { background:var(--acc); color:#06121f; border:0; border-radius:6px; padding:7px 14px; font-weight:600; cursor:pointer; font-size:13px; }
-  button.ghost { background:var(--line); color:var(--txt); }
-  button.danger { background:var(--bad); color:#1d0606; }
+  button { background:var(--acc); color:var(--acc-ink); border:0; border-radius:var(--r-sm); padding:8px 15px; font-weight:600; cursor:pointer; font-size:13px; font-family:inherit; transition:filter .15s var(--ease),transform .05s var(--ease); }
+  button:hover { filter:brightness(1.08); }
+  button:active { transform:translateY(1px); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.ghost { background:var(--line); color:var(--txt); } button.ghost:hover { background:var(--line-2); filter:none; }
+  button.danger { background:var(--bad); color:#fff; }
   .muted-note { color:var(--dim); font-size:12px; margin-top:6px; }
   sparkline, svg.spark { display:block; }
+  .skeleton { position:relative; overflow:hidden; background:var(--line); border-radius:var(--r-sm); }
+  .skeleton::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent); animation:shimmer 1.3s infinite; }
+  @keyframes shimmer { 100% { transform:translateX(100%); } }
+  @media (prefers-reduced-motion:reduce){ *{ animation:none!important; transition:none!important; } }
 </style></head>
 <body>
 <header>
-  <h1>${brand}</h1>
+  <h1><a href="${app === "apps" ? "/" : "/leads"}" style="color:inherit;text-decoration:none" title="Back to ${brand}">${brand}</a></h1>
   <nav class="navgroup">${tabs.map(tab).join("")}</nav>
 </header>
 <main>${opts.body}</main>
@@ -23537,6 +23553,133 @@ ${opts.script ? `<script>${opts.script}</script>` : ""}
 init_log();
 init_db();
 await init_jobs();
+
+// src/leads/channels.ts
+var lc = (v) => (v == null ? "" : String(v)).toLowerCase().trim();
+var str = (v) => {
+  const s = v == null ? "" : String(v).trim();
+  return s || null;
+};
+function classifyEmail(raw) {
+  const s = lc(raw);
+  if (!s) return "unknown";
+  if (/(^|[^a-z])(valid|deliverable|safe|ok|ultra|verified|clay_verified)([^a-z]|$)/.test(s)) {
+    if (/(invalid|undeliverable|not_?deliverable)/.test(s)) return "invalid";
+    return "valid";
+  }
+  if (/(catch[_\s-]?all|accept[_\s-]?all|risky|risk|unknown_quality|greylist|disposable|role|do[_\s-]?not[_\s-]?mail)/.test(s)) return "risky";
+  if (/(invalid|undeliverable|bounce|bounced|bad|dead|failed|reject)/.test(s)) return "invalid";
+  if (/(unverified|needs_?lookup|not_?checked|pending|none)/.test(s)) return "unknown";
+  return "unknown";
+}
+function classifyPhoneType(raw, fieldNameHint = "") {
+  const s = lc(raw) || lc(fieldNameHint);
+  if (!s) return "unknown";
+  if (/(mobile|cell|cellular|personal)/.test(s)) return "mobile";
+  if (/(direct[_\s-]?dial|direct|ddi)/.test(s)) return "direct_dial";
+  if (/(hq|head[_\s-]?quarter|main|switch[_\s-]?board|reception|company|corporate|office|work|landline|general)/.test(s)) return "hq";
+  if (/voip/.test(s)) return "direct_dial";
+  return "unknown";
+}
+function classifyPhoneVerif(raw) {
+  const s = lc(raw);
+  if (!s) return "unknown";
+  if (/(invalid|disconnected|not[_\s-]?in[_\s-]?service|dead|bad|unreachable|fail)/.test(s)) return "invalid";
+  if (/(valid|connected|active|verified|reachable|live|ok|true|yes)/.test(s)) return "valid";
+  return "unknown";
+}
+function channelsFromLead(rp, email, emailStatus) {
+  const phone = (str(rp.clay_phone) ?? str(rp.phone)) || null;
+  return route({
+    email: email?.toLowerCase() ?? null,
+    email_verif: classifyEmail(rp.email_verif ?? emailStatus),
+    phone,
+    phone_type: classifyPhoneType(rp.clay_phone_type ?? rp.phone_type),
+    phone_verif: classifyPhoneVerif(rp.clay_phone_verif ?? rp.phone_verif)
+  });
+}
+function route(c) {
+  const email_ready = Boolean(c.email) && c.email_verif === "valid";
+  const isDirect = c.phone_type === "mobile" || c.phone_type === "direct_dial";
+  const dial_ready = Boolean(c.phone) && isDirect && c.phone_verif !== "invalid";
+  const routed_to = [];
+  if (email_ready) routed_to.push("email");
+  if (dial_ready) routed_to.push("call");
+  return { ...c, email_ready, dial_ready, routed_to };
+}
+
+// src/leads/cpm-map.ts
+var PAID_CPM_BY_GEO = {
+  us: { usd: 16, src: "Statista / Lebesgue Meta CPM 2025 (~$16; AdAmigo $20.5)" },
+  br: { usd: 4.2, src: "Lebesgue / AdAmigo 2025 ($2.6\u20134.2)" },
+  mx: { usd: 3.92, src: "Adligator / Lebesgue 2025" },
+  in: { usd: 1.8, src: "multiple 2025 ($1.36\u20132.6)" },
+  tr: { usd: 2.5, src: "(est) emerging-market proxy \u2014 no direct source" },
+  id: { usd: 2, src: "(est) emerging-market proxy" },
+  ar: { usd: 2.5, src: "(est) emerging-market proxy" }
+};
+var DEFAULT_PAID_CPM = 6;
+var CATEGORY_MULT = {
+  health: 1.5,
+  wellness: 1.5,
+  fitness: 1.4,
+  finance: 1.35,
+  fintech: 1.35,
+  bank: 1.35,
+  invest: 1.3,
+  insurance: 1.3,
+  beauty: 1.2,
+  ecommerce: 1.2,
+  dtc: 1.2,
+  retail: 1.2,
+  fashion: 1.2,
+  skincare: 1.2,
+  dating: 1.05,
+  social: 1.05,
+  matrimony: 1.05,
+  food: 1,
+  beverage: 1,
+  travel: 0.95,
+  education: 0.8,
+  edtech: 0.8,
+  learning: 0.8,
+  music: 0.7,
+  audio: 0.7,
+  gaming: 0.75,
+  games: 0.75,
+  productivity: 0.6,
+  ai: 0.55,
+  saas: 0.55,
+  tech: 0.55
+};
+var DEFAULT_CATEGORY_MULT = 1;
+var ORGANIC_CPM_BY_GEO = {
+  us: 2,
+  br: 0.55,
+  mx: 0.65,
+  in: 0.35,
+  tr: 0.4,
+  id: 0.45,
+  ar: 0.55
+};
+var DEFAULT_ORGANIC_CPM = 0.6;
+var DELTA_CAP = 40;
+function catMult(category) {
+  if (!category) return DEFAULT_CATEGORY_MULT;
+  const c = category.toLowerCase();
+  for (const [k, v] of Object.entries(CATEGORY_MULT)) if (c.includes(k)) return v;
+  return DEFAULT_CATEGORY_MULT;
+}
+var paidCpm = (geo, category) => (PAID_CPM_BY_GEO[(geo || "").toLowerCase()]?.usd ?? DEFAULT_PAID_CPM) * catMult(category);
+var organicCpm = (geo) => ORGANIC_CPM_BY_GEO[(geo || "").toLowerCase()] ?? DEFAULT_ORGANIC_CPM;
+var cpmDelta = (geo, category) => paidCpm(geo, category) / organicCpm(geo);
+function opportunityScore(jakaScore, geo, category) {
+  const fit = jakaScore == null ? 0.5 : Math.max(0, Math.min(1, jakaScore > 1 ? jakaScore / 100 : jakaScore));
+  const dNorm = Math.min(cpmDelta(geo, category), DELTA_CAP) / DELTA_CAP;
+  return Number((fit * dNorm).toFixed(4));
+}
+
+// src/leads/routes.ts
 init_instantly();
 var send = (res, status, body) => {
   res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
@@ -23595,7 +23738,7 @@ async function clayIngest(req, res) {
     if (l.domain) byDomain.set(domKey(l.domain), l);
     if (l.company) byCompany.set(l.company.toLowerCase().trim(), l);
   }
-  const str = (v) => {
+  const str2 = (v) => {
     const s = v == null ? "" : String(v).trim();
     return s || null;
   };
@@ -23603,14 +23746,14 @@ async function clayIngest(req, res) {
   const updates = [];
   const inserts = [];
   for (const r of records) {
-    const domain = domKey(str(r.domain) ?? str(r.website) ?? str(r.company_domain) ?? "");
-    const company = str(r.company) ?? str(r.company_name) ?? str(r.organization_name);
-    const email = str(r.email)?.toLowerCase() ?? null;
-    const phone = str(r.phone) ?? str(r.mobile_phone) ?? str(r.direct_phone) ?? str(r.work_phone);
-    const name = str(r.contact_name) ?? ([str(r.first_name), str(r.last_name)].filter(Boolean).join(" ") || null);
-    const title = str(r.contact_title) ?? str(r.title) ?? str(r.job_title);
-    const linkedin = str(r.linkedin) ?? str(r.linkedin_url);
-    const lid = str(r.lead_id);
+    const domain = domKey(str2(r.domain) ?? str2(r.website) ?? str2(r.company_domain) ?? "");
+    const company = str2(r.company) ?? str2(r.company_name) ?? str2(r.organization_name);
+    const email = str2(r.email)?.toLowerCase() ?? null;
+    const phone = str2(r.phone) ?? str2(r.mobile_phone) ?? str2(r.direct_phone) ?? str2(r.work_phone);
+    const name = str2(r.contact_name) ?? ([str2(r.first_name), str2(r.last_name)].filter(Boolean).join(" ") || null);
+    const title = str2(r.contact_title) ?? str2(r.title) ?? str2(r.job_title);
+    const linkedin = str2(r.linkedin) ?? str2(r.linkedin_url);
+    const lid = str2(r.lead_id);
     const match = lid && byId.get(lid) || domain && byDomain.get(domain) || company && byCompany.get(company.toLowerCase());
     if (match) {
       const rp = { ...match.raw_payload ?? {}, contact_source: "clay", clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now };
@@ -23632,9 +23775,9 @@ async function clayIngest(req, res) {
         email_status: email ? "clay_verified" : "needs_lookup",
         contact_name: name,
         contact_title: title,
-        category: str(r.category),
-        hq: str(r.hq) ?? str(r.city),
-        geo: str(r.geo),
+        category: str2(r.category),
+        hq: str2(r.hq) ?? str2(r.city),
+        geo: str2(r.geo),
         signal_source_url: null,
         enriched_at: email ? now : null,
         raw_payload: { contact_source: "clay", clay_phone: phone, clay_linkedin: linkedin, clay_enriched_at: now }
@@ -24537,6 +24680,79 @@ async function strategyPage(_req, res) {
   }
   send(res, 200, pageShell({ title: "Leads \xB7 Strategy", active: "strategy", body: armTab + crossTab + doc }));
 }
+async function leadsExport(_req, res, url) {
+  const db = getLeadsDb();
+  const [leadsAll, tiers] = await Promise.all([db.listLeadsJoined(), getTiers()]);
+  const q = url.searchParams;
+  const includeAll = ["all", "1"].includes(q.get("include") ?? "");
+  const wantAll = q.get("all") === "1";
+  const status = (q.get("status") ?? "").toLowerCase();
+  const geo = (q.get("geo") ?? "").toLowerCase();
+  const category = (q.get("category") ?? "").toLowerCase();
+  const arm = (q.get("arm") ?? "").toLowerCase();
+  const since = q.get("since") ?? "";
+  const limit = Number(q.get("limit")) || 0;
+  const wantDial = q.get("dial_ready") === "1";
+  const wantEmailReady = q.get("email_ready") === "1";
+  let leads = leadsAll.filter((l) => {
+    const rp = l.raw_payload ?? {};
+    if (!includeAll && (rp.icp_type || rp.duplicate)) return false;
+    if (!(l.company || l.domain)) return false;
+    if (!wantAll && !wantDial && !l.email) return false;
+    if (status && (l.email_status ?? "").toLowerCase() !== status) return false;
+    if (geo && (l.geo ?? "").toLowerCase() !== geo) return false;
+    if (category && (l.category ?? "").toLowerCase() !== category) return false;
+    if (arm && l.source_arm.toLowerCase() !== arm) return false;
+    if (since && l.created_at < since) return false;
+    if (wantDial && !channelsFromLead(rp, l.email, l.email_status).dial_ready) return false;
+    if (wantEmailReady && !channelsFromLead(rp, l.email, l.email_status).email_ready) return false;
+    return true;
+  });
+  leads.sort((a, b) => Number(b.jaka_score ?? 0) - Number(a.jaka_score ?? 0));
+  if (limit > 0) leads = leads.slice(0, limit);
+  const out = leads.map((l) => {
+    const rp = l.raw_payload ?? {};
+    const ch = channelsFromLead(rp, l.email, l.email_status);
+    return {
+      id: l.id,
+      company: l.company,
+      domain: l.domain,
+      contact_name: l.contact_name,
+      contact_title: l.contact_title,
+      email: l.email,
+      email_status: l.email_status,
+      contact_verified: (l.email_status ?? "").toLowerCase() === "clay_verified",
+      // Per-channel routing verdicts (the verification gate). dial_ready = a direct
+      // line that isn't a switchboard; email_ready = a deliverable address.
+      email_verif: ch.email_verif,
+      email_ready: ch.email_ready,
+      phone_type: ch.phone_type,
+      phone_verif: ch.phone_verif,
+      dial_ready: ch.dial_ready,
+      routed_to: ch.routed_to,
+      phone: rp.clay_phone || rp.phone || null,
+      linkedin: rp.clay_linkedin || null,
+      geo: l.geo,
+      category: l.category,
+      source_arm: l.source_arm,
+      jaka_score: l.jaka_score,
+      tier: tierOf(l.jaka_score, tiers),
+      // CPM-delta opportunity (Jun 11 strategy) so external consumers can rank by it too.
+      cpm_delta: Number(cpmDelta(l.geo, l.category).toFixed(1)),
+      opp: opportunityScore(l.jaka_score, l.geo, l.category),
+      stage: l.stage,
+      created_at: l.created_at,
+      enriched_at: l.enriched_at
+    };
+  });
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=60"
+  });
+  if ((q.get("format") ?? "") === "array") return void res.end(JSON.stringify(out));
+  res.end(JSON.stringify({ count: out.length, generated_at: (/* @__PURE__ */ new Date()).toISOString(), leads: out }));
+}
 function registerRoutes(routes2) {
   routes2.set("GET /leads/strategy", strategyPage);
   routes2.set("GET /leads", pipelinePage);
@@ -24549,6 +24765,7 @@ function registerRoutes(routes2) {
   routes2.set("POST /leads/settings/resolve", resolveSuggestionAction);
   routes2.set("POST /leads/clay", clayIngest);
   routes2.set("GET /leads/targets", targetsList);
+  routes2.set("GET /leads/export", leadsExport);
   routes2.set("POST /leads/update", leadUpdate);
 }
 
@@ -24581,29 +24798,45 @@ function passwordOk(req) {
 async function handler(req, res) {
   const host = req.headers.host || "localhost";
   const url = new URL(req.url ?? "/", `https://${host}`);
-  if (url.pathname === "/leads/clay" || url.pathname === "/leads/targets") {
-    const token = process.env.CLAY_WEBHOOK_TOKEN;
-    const sent = req.headers["x-clay-token"] || url.searchParams.get("token") || "";
-    if (!token || sent !== token) {
+  if (url.pathname === "/leads/clay" || url.pathname === "/leads/targets" || url.pathname === "/leads/export") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET, POST, OPTIONS",
+        "access-control-allow-headers": "content-type, x-clay-token, authorization",
+        "access-control-max-age": "86400"
+      });
+      res.end();
+      return;
+    }
+    const writeTok = process.env.CLAY_WEBHOOK_TOKEN;
+    const readTok = process.env.LEADS_READ_TOKEN;
+    const sent = req.headers["x-clay-token"] || (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "") || url.searchParams.get("token") || "";
+    const ok = url.pathname === "/leads/export" ? Boolean(readTok && sent === readTok || writeTok && sent === writeTok) : Boolean(writeTok && sent === writeTok);
+    if (!ok) {
       res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
       res.end('{"error":"unauthorized"}');
       return;
     }
-    const clay = routes.get(`${req.method} ${url.pathname}`);
-    if (clay) {
-      await clay(req, res, url);
+    const route3 = routes.get(`${req.method} ${url.pathname}`);
+    if (route3) {
+      await route3(req, res, url);
       return;
     }
+    const allow = url.pathname === "/leads/clay" ? "POST, OPTIONS" : "GET, OPTIONS";
+    res.writeHead(405, { "content-type": "application/json; charset=utf-8", allow });
+    res.end('{"error":"method_not_allowed"}');
+    return;
   }
   if (!passwordOk(req)) return unauthorized(res);
-  const route = routes.get(`${req.method} ${url.pathname}`);
-  if (!route) {
+  const route2 = routes.get(`${req.method} ${url.pathname}`);
+  if (!route2) {
     res.writeHead(404, { "content-type": "text/html; charset=utf-8" });
     res.end("<p>404 \u2014 not found</p>");
     return;
   }
   try {
-    await route(req, res, url);
+    await route2(req, res, url);
   } catch {
     res.writeHead(500, { "content-type": "text/html; charset=utf-8" });
     res.end("<p>Internal error</p>");

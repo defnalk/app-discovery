@@ -49,20 +49,48 @@ export default async function handler(req: IncomingMessage & { method?: string }
   const host = (req.headers.host as string) || 'localhost';
   const url = new URL(req.url ?? '/', `https://${host}`);
 
-  // Clay endpoints: gated by their own CLAY_WEBHOOK_TOKEN, NOT the dashboard Basic
-  // Auth (an automated tool can't do an interactive login). Fails closed.
-  //   POST /leads/clay     — Clay sends enriched contacts IN
-  //   GET  /leads/targets  — Clay imports the target company list OUT
-  if (url.pathname === '/leads/clay' || url.pathname === '/leads/targets') {
-    const token = process.env.CLAY_WEBHOOK_TOKEN;
-    const sent = (req.headers['x-clay-token'] as string) || url.searchParams.get('token') || '';
-    if (!token || sent !== token) {
+  // Token-gated API endpoints: gated by a shared token, NOT the dashboard Basic Auth
+  // (an automated tool / external site can't do an interactive login). Fail closed.
+  //   POST /leads/clay     — Clay sends enriched contacts IN   (CLAY_WEBHOOK_TOKEN)
+  //   GET  /leads/targets  — Clay imports the target list OUT  (CLAY_WEBHOOK_TOKEN)
+  //   GET  /leads/export   — external sites (Bulut) pull the lead book (LEADS_READ_TOKEN, or CLAY_WEBHOOK_TOKEN as fallback)
+  if (url.pathname === '/leads/clay' || url.pathname === '/leads/targets' || url.pathname === '/leads/export') {
+    // CORS preflight for cross-origin browser fetches of the read feed.
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-headers': 'content-type, x-clay-token, authorization',
+        'access-control-max-age': '86400',
+      });
+      res.end();
+      return;
+    }
+    const writeTok = process.env.CLAY_WEBHOOK_TOKEN;
+    const readTok = process.env.LEADS_READ_TOKEN;
+    const sent =
+      (req.headers['x-clay-token'] as string) ||
+      ((req.headers['authorization'] as string) || '').replace(/^Bearer\s+/i, '') ||
+      url.searchParams.get('token') ||
+      '';
+    // The read-only export accepts a dedicated read token OR the Clay token; the
+    // write/targets endpoints require the Clay token specifically.
+    const ok = url.pathname === '/leads/export'
+      ? Boolean((readTok && sent === readTok) || (writeTok && sent === writeTok))
+      : Boolean(writeTok && sent === writeTok);
+    if (!ok) {
       res.writeHead(401, { 'content-type': 'application/json; charset=utf-8' });
       res.end('{"error":"unauthorized"}');
       return;
     }
-    const clay = routes.get(`${req.method} ${url.pathname}`);
-    if (clay) { await clay(req, res, url); return; }
+    const route = routes.get(`${req.method} ${url.pathname}`);
+    if (route) { await route(req, res, url); return; }
+    // Valid token but no handler for this method on a token-gated path — return a
+    // clean 405 and NEVER fall through to the dashboard Basic Auth below.
+    const allow = url.pathname === '/leads/clay' ? 'POST, OPTIONS' : 'GET, OPTIONS';
+    res.writeHead(405, { 'content-type': 'application/json; charset=utf-8', allow });
+    res.end('{"error":"method_not_allowed"}');
+    return;
   }
 
   if (!passwordOk(req)) return unauthorized(res);
