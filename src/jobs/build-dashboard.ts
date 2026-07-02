@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports', 'brief', 'advance'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports', 'brief'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -1203,7 +1203,7 @@ function renderPipeline(){
   el.querySelectorAll('.pipe-move').forEach(b => b.onclick = () => pipeMove(b.dataset.id, b.dataset.to));
 }
 async function pipeMove(id, to){
-  const r = await api('/api/advance', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, status:to }) });
+  const r = await api('/api/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, status:to }) });
   if (r.status === 401) { setMe(null); openLogin(); return; }
   if (!r.ok) { toast((r.data && r.data.error) || 'Update failed', 'err'); return; }
   toast('Moved to '+to, 'ok');
