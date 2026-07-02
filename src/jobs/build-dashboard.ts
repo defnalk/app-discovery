@@ -293,6 +293,7 @@ export async function buildDashboard() {
       <div>${esc(i.concept ?? '')}</div>
       <div class="idea-why">▸ ${esc(i.why ?? '')}</div>
       ${i.source_url ? `<a href="${esc(i.source_url)}" target="_blank" class="idea-link">source ↗</a>` : ''}
+      <div class="idea-claim" data-id="${esc(i.dedup_key)}" data-name="${esc(i.app_name)}" data-cat="${esc(i.category ?? '')}" style="margin-top:8px"></div>
     </div>`;
   }).join('');
   void srcMix;
@@ -729,6 +730,7 @@ const fmt = (n) => n == null ? '-' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e
 const ALL_GEOS = ${embedJson([...COUNTRIES])};
 const NET_GEOS = ${embedJson(LARGE_MARKETS)};
 let CLAIMS = {};   // subject_id -> claim row (apps), from /api/plays-state
+let IDEA_CLAIMS = {};   // dedup_key -> claim row (ideas), from /api/plays-state
 let ME = null;     // {name, role} UI hint; the HttpOnly cookie is the real gate
 function clearFilters(){
   ['q','geo','cat','seen','mom'].forEach(id => { const el = $('#'+id); if (el) el.value=''; });
@@ -989,7 +991,7 @@ function setMe(m){ ME = m; if (m) localStorage.setItem('play_me', JSON.stringify
 function renderAuth(){
   const box = $('#authbox'); if (!box) return;
   box.innerHTML = ME ? '<span class="dim" style="margin-right:8px">'+escq(ME.name)+(ME.role==='admin'?' · admin':'')+'</span><button class="ghost" id="signout">Sign out</button>' : '<button id="signin">Sign in</button>';
-  const so = $('#signout'); if (so) so.onclick = () => { setMe(null); CLAIMS = {}; refreshAll(); };
+  const so = $('#signout'); if (so) so.onclick = () => { setMe(null); CLAIMS = {}; IDEA_CLAIMS = {}; refreshAll(); };
   const si = $('#signin'); if (si) si.onclick = openLogin;
   const at = $('#admin-tab'); if (at) at.style.display = (ME && ME.role==='admin') ? '' : 'none';
   const bt = $('#b2b-tab'); if (bt) bt.style.display = (ME && ME.role==='admin') ? '' : 'none';
@@ -1009,12 +1011,12 @@ async function doLogin(){
   await loadState(); refreshAll();
 }
 async function loadState(){
-  if (!meHint()) { CLAIMS = {}; return; }
+  if (!meHint()) { CLAIMS = {}; IDEA_CLAIMS = {}; return; }
   const r = await api('/api/plays-state');
-  if (r.status === 401) { setMe(null); CLAIMS = {}; return; }
-  if (r.ok) { CLAIMS = {}; (r.data.claims||[]).forEach(c => { if (c.subject_type === 'app') CLAIMS[c.subject_id] = c; }); if (r.data.me) setMe(r.data.me); }
+  if (r.status === 401) { setMe(null); CLAIMS = {}; IDEA_CLAIMS = {}; return; }
+  if (r.ok) { CLAIMS = {}; IDEA_CLAIMS = {}; (r.data.claims||[]).forEach(c => { if (c.subject_type === 'app') CLAIMS[c.subject_id] = c; else if (c.subject_type === 'idea') IDEA_CLAIMS[c.subject_id] = c; }); if (r.data.me) setMe(r.data.me); }
 }
-function refreshAll(){ renderHome(); render(); renderSubmitGate(); renderAdvisorGate(); renderPipeline(); if (ME && ME.role==='admin') renderAdmin(); }
+function refreshAll(){ renderHome(); render(); renderSubmitGate(); renderAdvisorGate(); renderPipeline(); renderIdeaClaims(); if (ME && ME.role==='admin') renderAdmin(); }
 async function doClaim(id, name, cat){
   if (!ME) { openLogin(); return; }
   const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
@@ -1023,6 +1025,28 @@ async function doClaim(id, name, cat){
   if (r.data && r.data.won === false) toast('Already claimed by ' + (r.data.claimed_by||'someone'), 'err');
   else toast(r.data && r.data.notified ? '✓ Claimed, team pinged on Slack' : '✓ Claimed, you have 24h to start', 'ok');
   await loadState(); refreshAll(); reopenDetail(id);  // re-sync from authoritative server state
+}
+// Idea Radar claims: same claim system (subject_type 'idea'), keyed by dedup_key.
+async function doClaimIdea(el){
+  if (!ME) { openLogin(); return; }
+  const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'idea', subjectId:el.dataset.id, subjectName:el.dataset.name, category:el.dataset.cat||'' }) });
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) { toast((r.data && r.data.error) || 'Claim failed', 'err'); await loadState(); renderIdeaClaims(); return; }
+  if (r.data && r.data.won === false) toast('Already claimed by ' + (r.data.claimed_by||'someone'), 'err');
+  else toast(r.data && r.data.notified ? '✓ Idea claimed, team pinged on Slack' : '✓ Idea claimed', 'ok');
+  await loadState(); renderIdeaClaims(); refreshAll();
+}
+function renderIdeaClaims(){
+  document.querySelectorAll('.idea-claim').forEach(el => {
+    const c = IDEA_CLAIMS[el.dataset.id];
+    if (c) {
+      const mine = ME && c.manager_name === ME.name;
+      el.innerHTML = '<span class="pill'+(mine?' new':'')+'">'+(mine?'✓ yours':'claimed by '+escq(c.manager_name))+'</span>';
+    } else {
+      el.innerHTML = ME ? '<button class="ghost idea-claim-btn" style="font-size:12px">＋ Claim idea</button>' : '<span class="dim" style="font-size:12px">sign in to claim</span>';
+      const b = el.querySelector('.idea-claim-btn'); if (b) b.onclick = () => doClaimIdea(el);
+    }
+  });
 }
 async function doStart(id){
   const r = await api('/api/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id }) });
