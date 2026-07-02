@@ -1044,8 +1044,22 @@ function renderHome(){
   const rising = [...free].sort((a,b)=> b.momentum - a.momentum).slice(0, 10);
   const claimed = ROWS.filter(r => CLAIMS[r.id]).sort((a,b)=> new Date(CLAIMS[b.id].claimed_at||0) - new Date(CLAIMS[a.id].claimed_at||0)).slice(0, 12);
   const strip = (title, arr) => '<div class="panel"><div style="font-weight:600;margin-bottom:10px">'+title+'</div><div class="hl-grid">'+(arr.length?arr.map(hlCardJS).join(''):'<span class="dim">none</span>')+'</div></div>';
+  // What moved: plays first seen on the most recent refresh date + the hottest climber
+  const latestSeen = ROWS.reduce((m,r)=> (r.first_seen && r.first_seen>m) ? r.first_seen : m, '');
+  const fresh = free.filter(r => r.first_seen === latestSeen && r.play > 0 && !r.incumbent).sort((a,b)=> b.play - a.play).slice(0, 8);
+  const topMover = rising[0];
+  let moved = '';
+  if (latestSeen) {
+    moved = '<div class="panel" style="border-left:3px solid var(--go)"><div style="font-weight:600;margin-bottom:6px">📡 Since the last refresh <span class="dim" style="font-weight:400;font-size:12px">'+escq(latestSeen)+'</span></div>'+
+      '<div class="dim" style="margin-bottom:'+(fresh.length?'10px':'0')+'">'+
+        (fresh.length ? fresh.length+' new play'+(fresh.length>1?'s':'')+' entered the board' : 'No brand-new plays this refresh')+
+        (topMover ? ' · hottest climber: <b style="color:var(--txt)">'+escq(topMover.name)+'</b> <span style="color:var(--go)">momentum '+topMover.momentum.toFixed(2)+'</span>' : '')+
+      '</div>'+
+      (fresh.length ? '<div class="hl-grid">'+fresh.map(hlCardJS).join('')+'</div>' : '')+
+    '</div>';
+  }
   body.classList.remove('dim');
-  body.innerHTML = strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
+  body.innerHTML = moved + strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
     (claimed.length ? strip('🤝 Claimed by the team', claimed) : '') +
     '<p class="muted-note">' + (ME ? 'Showing plays not yet claimed up top. ' : 'Sign in to claim plays. ') + '<b>Top Plays</b> has all '+ROWS.length+' apps with filters &amp; categories; <b>Idea Radar</b> has fresh concepts.</p>';
   body.querySelectorAll('.hl-card').forEach(c => c.onclick = () => { const i = ROWS.findIndex(r=>r.id===c.dataset.id); if (i>=0) openApp(i); });
