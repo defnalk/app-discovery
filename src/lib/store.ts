@@ -165,7 +165,7 @@ class SupabaseStore implements Store {
     // Client-side timeout: Supabase occasionally leaves a query hanging (no response,
     // no error), which would hang the whole build. Bound it so the paged() retry can
     // reissue instead of waiting forever.
-    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('supabase query timed out (client-side 45s)')), 45000));
+    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('supabase query timed out (client-side 90s)')), 90000));
     const { data, error } = (await Promise.race([p, timeout])) as { data: unknown; error: { message: string } | null };
     if (error) throw new Error(error.message);
     return data as T;
