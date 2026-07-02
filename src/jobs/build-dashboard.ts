@@ -1059,8 +1059,8 @@ function renderHome(){
     '</div>';
   }
   body.classList.remove('dim');
-  body.innerHTML = moved + strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
-    (claimed.length ? strip('🤝 Claimed by the team', claimed) : '') +
+  body.innerHTML = (claimed.length ? strip('🤝 Claimed by the team', claimed) : '') + moved +
+    strip('🎯 Top 10 available plays to build', top) + strip('🔥 Rising fastest (available)', rising) +
     '<p class="muted-note">' + (ME ? 'Showing plays not yet claimed up top. ' : 'Sign in to claim plays. ') + '<b>Top Plays</b> has all '+ROWS.length+' apps with filters &amp; categories; <b>Idea Radar</b> has fresh concepts.</p>';
   body.querySelectorAll('.hl-card').forEach(c => c.onclick = () => { const i = ROWS.findIndex(r=>r.id===c.dataset.id); if (i>=0) openApp(i); });
 }
