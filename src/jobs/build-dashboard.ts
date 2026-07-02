@@ -1049,12 +1049,22 @@ async function doClaimIdea(el){
   else toast(r.data && r.data.notified ? '✓ Idea claimed, team pinged on Slack' : '✓ Idea claimed', 'ok');
   await loadState(); renderIdeaClaims(); refreshAll();
 }
+async function doUnclaimIdea(el){
+  const r = await api('/api/release', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'idea', subjectId:el.dataset.id }) });
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) { toast((r.data && r.data.error) || 'Unclaim failed', 'err'); return; }
+  toast('Unclaimed, back in the pool', 'ok');
+  await loadState(); renderIdeaClaims(); refreshAll();
+}
 function renderIdeaClaims(){
   document.querySelectorAll('.idea-claim').forEach(el => {
     const c = IDEA_CLAIMS[el.dataset.id];
     if (c) {
       const mine = ME && c.manager_name === ME.name;
-      el.innerHTML = '<span class="pill'+(mine?' new':'')+'">'+(mine?'✓ yours':'claimed by '+escq(c.manager_name))+'</span>';
+      const canRelease = ME && (mine || ME.role === 'admin');
+      el.innerHTML = '<span class="pill'+(mine?' new':'')+'">'+(mine?'✓ yours':'claimed by '+escq(c.manager_name))+'</span>'+
+        (canRelease ? ' <button class="ghost idea-unclaim-btn" style="font-size:12px">✕ Unclaim</button>' : '');
+      const u = el.querySelector('.idea-unclaim-btn'); if (u) u.onclick = () => doUnclaimIdea(el);
     } else {
       el.innerHTML = ME ? '<button class="ghost idea-claim-btn" style="font-size:12px">＋ Claim idea</button>' : '<span class="dim" style="font-size:12px">sign in to claim</span>';
       const b = el.querySelector('.idea-claim-btn'); if (b) b.onclick = () => doClaimIdea(el);
