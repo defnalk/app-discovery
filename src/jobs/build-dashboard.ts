@@ -121,9 +121,22 @@ export async function buildDashboard() {
   const store = getStore();
   const startedAt = new Date().toISOString();
   const since = new Date(Date.now() - 14 * DAY).toISOString();
-  const [apps, rollups, snaps, analyses, scores, dbIdeas] = await Promise.all([
-    store.listApps(), store.listRollups(), store.listSnapshotsSince(since), store.listAnalyses(), store.listScores(), store.listIdeas(),
-  ]);
+  // Normally these ~130 pages read concurrently (fast). Under a degraded Supabase
+  // instance the concurrent load makes queries spike and time out; SEQUENTIAL_READS=1
+  // reads them one at a time (far less contention) so the build completes, just slower.
+  let apps, rollups, snaps, analyses, scores, dbIdeas;
+  if (process.env.SEQUENTIAL_READS === '1') {
+    apps = await store.listApps();
+    rollups = await store.listRollups();
+    snaps = await store.listSnapshotsSince(since);
+    analyses = await store.listAnalyses();
+    scores = await store.listScores();
+    dbIdeas = await store.listIdeas();
+  } else {
+    [apps, rollups, snaps, analyses, scores, dbIdeas] = await Promise.all([
+      store.listApps(), store.listRollups(), store.listSnapshotsSince(since), store.listAnalyses(), store.listScores(), store.listIdeas(),
+    ]);
+  }
   const ideas = loadIdeas(dbIdeas);
   const appById = new Map(apps.map((a) => [a.id, a]));
   const analysisById = new Map(analyses.map((a) => [a.app_id, a]));
