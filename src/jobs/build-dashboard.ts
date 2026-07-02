@@ -37,7 +37,7 @@ function loadIdeas(dbIdeas: IdeaRow[]): IdeaCard[] {
  *  the leads app's prebundled api/index.js) so the public/ deploy needs no package.json. */
 async function bundleFunctions() {
   const dir = path.join(process.cwd(), 'src', 'playapi');
-  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports', 'brief'];
+  const names = ['login', 'claim', 'start', 'release', 'submit', 'plays-state', 'admin', 'advisor', 'b2b', 'advisor-reports', 'brief', 'advance'];
   const esbuild = await import('esbuild');
   await esbuild.build({
     entryPoints: names.map((n) => path.join(dir, `${n}.ts`)),
@@ -498,6 +498,7 @@ export async function buildDashboard() {
   <button class="tabbtn" data-tab="ideas">💡 Idea Radar</button>
   <button class="tabbtn" data-tab="charts">📈 Charts</button>
   <button class="tabbtn" data-tab="submit">📝 Submit a play</button>
+  <button class="tabbtn" data-tab="pipeline">🚀 Pipeline</button>
   <button class="tabbtn" data-tab="advisor">🧭 Advisor</button>
   <button class="tabbtn" data-tab="teardowns">📈 Teardowns</button>
   <button class="tabbtn" id="b2b-tab" data-tab="b2b" style="display:none">🏢 B2B</button>
@@ -632,6 +633,15 @@ export async function buildDashboard() {
     <div id="advisor-report" style="margin-top:16px"></div>
     <div id="advisor-saved"></div>
   </div>
+</section>
+
+<section class="tabpane" id="tab-pipeline">
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 4px">
+    <h2 style="margin:0;font-size:20px">Build pipeline</h2>
+    <span class="dim" style="font-size:13px">who is building what</span>
+  </div>
+  <p class="muted-note" style="margin:0 0 12px">Every claimed play by stage. Move your own with the arrows; admins can move anyone. Claimed, then Building, then Shipped, then Growing.</p>
+  <div id="pipeline-body" class="dim">Sign in to see the build pipeline.</div>
 </section>
 
 <section class="tabpane" id="tab-teardowns">
@@ -1004,7 +1014,7 @@ async function loadState(){
   if (r.status === 401) { setMe(null); CLAIMS = {}; return; }
   if (r.ok) { CLAIMS = {}; (r.data.claims||[]).forEach(c => { if (c.subject_type === 'app') CLAIMS[c.subject_id] = c; }); if (r.data.me) setMe(r.data.me); }
 }
-function refreshAll(){ renderHome(); render(); renderSubmitGate(); renderAdvisorGate(); if (ME && ME.role==='admin') renderAdmin(); }
+function refreshAll(){ renderHome(); render(); renderSubmitGate(); renderAdvisorGate(); renderPipeline(); if (ME && ME.role==='admin') renderAdmin(); }
 async function doClaim(id, name, cat){
   if (!ME) { openLogin(); return; }
   const r = await api('/api/claim', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, subjectName:name, category:cat }) });
@@ -1169,6 +1179,35 @@ function renderBrief(box, brief){
   h += '<div><b>Risks</b>'+list(brief.risks, x=>'<li>'+escq(x)+'</li>')+'</div>';
   h += '</div>';
   box.innerHTML = h;
+}
+// --- Build pipeline (#3): every claim by stage, Claimed → Building → Shipped → Growing ---
+const PIPELINE = [ {k:'reserved', label:'📋 Claimed'}, {k:'started', label:'🔨 Building'}, {k:'shipped', label:'🚀 Shipped'}, {k:'growing', label:'📈 Growing'} ];
+function renderPipeline(){
+  const el = $('#pipeline-body'); if (!el) return;
+  if (!ME) { el.className='panel dim'; el.textContent='Sign in to see the build pipeline.'; return; }
+  el.className='';
+  const stageKeys = PIPELINE.map(s=>s.k);
+  const byStage = {}; stageKeys.forEach(k=>byStage[k]=[]);
+  Object.keys(CLAIMS).map(k=>CLAIMS[k]).forEach(c => { const k = stageKeys.indexOf(c.status)>=0 ? c.status : 'reserved'; byStage[k].push(c); });
+  const idx = (k)=>{ const i=stageKeys.indexOf(k); return i<0?0:i; };
+  const card = (c)=>{
+    const i = idx(c.status);
+    const mine = ME && c.manager_name===ME.name;
+    const canMove = ME && (ME.role==='admin' || mine);
+    const back = i>0 ? '<button class="ghost pipe-move" data-id="'+escq(c.subject_id)+'" data-to="'+stageKeys[i-1]+'" title="Move back" style="font-size:12px;padding:2px 7px">←</button>' : '';
+    const fwd = i<stageKeys.length-1 ? '<button class="ghost pipe-move" data-id="'+escq(c.subject_id)+'" data-to="'+stageKeys[i+1]+'" title="Move forward" style="font-size:12px;padding:2px 7px">→</button>' : '';
+    return '<div style="background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px'+(mine?';border-left:3px solid var(--go)':'')+'"><div style="font-weight:600;font-size:13px">'+escq(c.subject_name||c.subject_id)+'</div><div class="dim" style="font-size:12px">'+escq(c.manager_name)+(mine?' (you)':'')+'</div>'+(canMove?'<div style="margin-top:6px;display:flex;gap:6px">'+back+fwd+'</div>':'')+'</div>';
+  };
+  const col = (s)=> '<div style="min-width:0"><div style="font-weight:700;margin-bottom:8px">'+s.label+' <span class="dim" style="font-weight:400">'+byStage[s.k].length+'</span></div>'+(byStage[s.k].length?byStage[s.k].map(card).join(''):'<span class="dim" style="font-size:12px">none</span>')+'</div>';
+  el.innerHTML = '<div class="panel"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">'+PIPELINE.map(col).join('')+'</div></div>';
+  el.querySelectorAll('.pipe-move').forEach(b => b.onclick = () => pipeMove(b.dataset.id, b.dataset.to));
+}
+async function pipeMove(id, to){
+  const r = await api('/api/advance', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ subjectType:'app', subjectId:id, status:to }) });
+  if (r.status === 401) { setMe(null); openLogin(); return; }
+  if (!r.ok) { toast((r.data && r.data.error) || 'Update failed', 'err'); return; }
+  toast('Moved to '+to, 'ok');
+  await loadState(); renderPipeline(); refreshAll();
 }
 function renderTeardowns(){
   const el = $('#teardowns-body'); if(!el) return;
@@ -1372,6 +1411,7 @@ function showTab(t) {
   document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
   if (t === 'admin') renderAdmin();
+  if (t === 'pipeline') renderPipeline();
   if (t === 'teardowns') renderTeardowns();
   if (t === 'b2b') renderB2B();
   if (t === 'submit') renderSubmitGate();
